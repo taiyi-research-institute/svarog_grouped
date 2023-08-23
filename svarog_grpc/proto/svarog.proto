@@ -1,0 +1,106 @@
+syntax = "proto3";
+option go_package = "proto/gen";
+package svarog;
+
+// A peer handles multiple shards of multiple keys.
+service MpcPeer {
+    rpc JoinSession(JoinSessionRequest) returns (SessionResult);
+    rpc GetSessionConfig(GetSessionConfigRequest) returns (SessionConfig);
+    rpc AbortSession(AbortSessionRequest) returns (Void);
+}
+
+service MpcSessionManager {
+    rpc NewSession(SessionConfig) returns (Void);
+    rpc GetSessionConfig(SessionId) returns (SessionConfig);
+    rpc BlowWhistle(Whistle) returns (Void);
+    rpc PostMessage(Message) returns (Void);
+    rpc GetMessage(Message) returns (Message);
+    rpc TerminateSession(SessionTermination) returns (Void);
+}
+
+message SessionConfig { 
+    string session_id = 1; // "" means unset
+    string session_type = 2; // one of "keygen", "sign", "reshare"
+    uint64 key_quorum = 3;
+    uint64 reshare_key_quorum = 4;
+    repeated Group groups = 5;
+    int64 expire_before_finish = 6; // 0 means unset
+    int64 expire_after_finish = 7; // 0 means unset
+
+    string derive_path = 16; // "" means unset
+    TxHashArray to_sign = 17; // [] means unset
+}
+
+message JoinSessionRequest {
+    string peer_id = 1;
+    string key_id = 2;
+    string token = 3;
+    SessionConfig ses_config = 17;
+}
+
+message GetSessionConfigRequest {
+    string peer_id = 1;
+    string ses_id = 2;
+}
+
+message AbortSessionRequest {
+    string peer_id = 1;
+    string ses_id = 2;
+    string reason = 3;
+}
+
+message Group {
+    string group_name = 1;
+    uint64 group_id = 2; // 0 means unset
+    uint64 group_quorum = 3;
+    bool is_reshare = 4;
+    repeated Member members = 5;
+}
+
+message Member {
+    string member_name = 1;
+    uint64 member_id = 2; // 0 means unset
+    bool is_attending = 3;
+}
+
+message Signature {
+    bytes r = 1;
+    bytes s = 2;
+    bool  v = 3;
+}
+
+message Void {}
+
+message TxHashArray {
+    repeated bytes values = 1;
+}
+
+message SessionId {
+    string session_id = 1;
+}
+
+message Whistle {
+    string session_id = 1;
+    string message = 2;
+}
+
+message Message {
+    string session_id = 1;
+    string purpose = 2; // formerly "round"
+    uint64 member_id_src = 3; // member_id or negated group_id
+    uint64 member_id_dst = 4;
+    bytes body = 5; // if not provided, use first two fields as index.
+}
+
+message SessionResult {
+    oneof value {
+        string root_xpub = 1; // keygen or reshare result
+        Signature signature = 2; // sign result
+    }
+}
+
+message SessionTermination {
+    string session_id = 1;
+    uint64 member_id = 2; // member_id
+    SessionResult result = 3;
+}

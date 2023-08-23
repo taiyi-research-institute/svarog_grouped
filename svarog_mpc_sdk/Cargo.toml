@@ -1,0 +1,80 @@
+[package]
+name = "svarog_mpc_sdk"
+version = "0.1.0"
+edition = "2021"
+
+[[bin]]
+name = "svarog_mpc_sdk"
+path = "src/main.rs"
+
+[dependencies]
+aes-gcm = { version = "0.9", features = ["std"] }
+anyhow = { version = "1.0", features = ["backtrace", "std"] }
+bip32 = { version = "0.5", features = ["secp256k1", "alloc"] }
+bitcoin = { version = "0.29", features = ["serde"] }
+chrono = "0.4"
+clap = { version = "4.3", features = ["derive"] }
+hex = "0.4"
+hmac = { version = "0.11.0", features = ["std"] }
+itertools = "0.10"
+miniz_oxide = "0.7"
+prost = "0.11.9"
+prost-types = "0.11.9"
+rand_core = "0.6"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+tiny-bip39 = "1" # provides bip39::*, not equivalent to crate `bip39`
+uuid = { version = "0.8", features = ["v4"] }
+tokio = { version = "1.32.0", features = ["full"] }
+tokio-stream = "0.1"
+zk-paillier = { version = "0.4.3", default_features = false}
+# tracing = "*"
+# tracing-subscriber = "*"
+# tracing-appender = "*"
+
+[dependencies.curv-kzen]
+version = "0.9"
+default-features = false
+features = ["num-bigint"]
+
+[dependencies.k256]
+version = "0.12"
+features = ["arithmetic", "serde", "ecdsa", "ecdsa-core"]
+
+[dependencies.multi-party-ecdsa]
+path = "mp-ecdsa-184c49fa"
+# git = "https://github.com/KZen-networks/multi-party-ecdsa"
+# tag = "v0.8.1"
+
+[dependencies.paillier]
+package = "kzen-paillier"
+version = "0.4.2"
+default-features = false
+
+[dependencies.sha2]
+# Winston: Do not use 0.10.z! Otherwise you'll encounter hundreds of trait compilation errors.
+# version = "0.10.6"
+version = "0.9.9"
+default-features = false
+
+[dependencies.tonic] # gRPC & protobuf library
+version = "0.9"
+features = [
+    "gzip", # compressed transmission
+    "channel", # enable channels of inner tokio
+]
+
+[dependencies.xuanmi_base_support]
+git = "ssh://git@github.com/taiyi-research-institute/xuanmi_base_support.git"
+branch = "main"
+# path = "../../xuanmi_base_support"
+
+[features]
+default = []
+procrastinate = []
+
+[profile.release]
+opt-level = 3
+lto = true
+codegen-units = 1
+strip = true

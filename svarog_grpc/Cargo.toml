@@ -1,0 +1,9 @@
+[package]
+name = "svarog_grpc"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+prost = "0.11.9"
+prost-types = "0.11.9"
+tonic = { version = "0.9", features = ["gzip", "channel"] }
