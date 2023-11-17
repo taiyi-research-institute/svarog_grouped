@@ -10,7 +10,7 @@ service MpcPeer {
     // call this to abort session.
     rpc AbortSession(AbortSessionRequest) returns (Void);
     
-    rpc SetBizUrl(BizRecallUrl) returns (Void);
+    rpc SetBizUrl(BizCallbackUrl) returns (Void);
 }
 
 service MpcSessionManager {
@@ -113,6 +113,6 @@ message SessionTermination {
     SessionResult result = 3;
 }
 
-message BizRecallUrl {
+message BizCallbackUrl {
     string heartbeat = 1;
 }
