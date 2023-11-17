@@ -5,13 +5,20 @@ package svarog;
 // A peer handles multiple shards of multiple keys.
 service MpcPeer {
     rpc JoinSession(JoinSessionRequest) returns (SessionResult);
-    rpc GetSessionConfig(GetSessionConfigRequest) returns (SessionConfig);
+    
+    // A session is subject to abortion if:
+    // 
     rpc AbortSession(AbortSessionRequest) returns (Void);
+    
+    rpc SetBizUrl(BizRecallUrl) returns (Void);
 }
 
 service MpcSessionManager {
+    // In the request, `session_id`, `group_id`s, `member_id`s
+    // are set to "zero-value"s.
     rpc NewSession(SessionConfig) returns (SessionConfig);
     rpc GetSessionConfig(SessionId) returns (SessionConfig);
+
     rpc BlowWhistle(Whistle) returns (Void);
     rpc PostMessage(Message) returns (Void);
     rpc GetMessage(Message) returns (Message);
@@ -19,39 +26,40 @@ service MpcSessionManager {
 }
 
 message SessionConfig { 
-    string session_id = 1; // "" means unset
+    string session_id = 1; // When creating session, set to ""
     string session_type = 2; // one of "keygen", "sign", "reshare"
     uint64 key_quorum = 3;
     uint64 reshare_key_quorum = 4;
     repeated Group groups = 5;
-    int64 expire_before_finish = 6; // 0 means unset
-    int64 expire_after_finish = 7; // 0 means unset
+    int64 expire_before_finish = 6; // When creating session, set to 0
+    int64 expire_after_finish = 7; // When creating session, set to 0
 
     string derive_path = 16; // "" means unset
     TxHashArray to_sign = 17; // [] means unset
 }
 
 message JoinSessionRequest {
-    string peer_id = 1;
-    string key_id = 2;
-    string token = 3;
+    string member_name = 1; // Name of MPC participant
+    string key_name = 2; // Name of root private key
+    // `(member_name, key_name)` uniquely identifies a key.
+
+    string token = 3; // Used for authentication
+    string mnemonics = 4; // Only end-user provides this
     SessionConfig ses_config = 17;
 }
 
 message GetSessionConfigRequest {
-    string peer_id = 1;
     string ses_id = 2;
 }
 
 message AbortSessionRequest {
     string peer_id = 1;
-    string ses_id = 2;
-    string reason = 3;
+    string reason = 2;
 }
 
 message Group {
     string group_name = 1;
-    uint64 group_id = 2; // 0 means unset
+    uint64 group_id = 2; // When creating session, set to 0
     uint64 group_quorum = 3;
     bool is_reshare = 4;
     repeated Member members = 5;
@@ -59,7 +67,7 @@ message Group {
 
 message Member {
     string member_name = 1;
-    uint64 member_id = 2; // 0 means unset
+    uint64 member_id = 2; // When creating session, set to 0
     bool is_attending = 3;
 }
 
@@ -87,9 +95,9 @@ message Whistle {
 message Message {
     string session_id = 1;
     string purpose = 2; // formerly "round"
-    uint64 member_id_src = 3; // member_id or negated group_id
+    uint64 member_id_src = 3;
     uint64 member_id_dst = 4;
-    bytes body = 5; // if not provided, use first two fields as index.
+    bytes body = 5; // if set to [], remaining fields are used as index.
 }
 
 message SessionResult {
@@ -103,4 +111,8 @@ message SessionTermination {
     string session_id = 1;
     uint64 member_id = 2; // member_id
     SessionResult result = 3;
+}
+
+message BizRecallUrl {
+    string heartbeat = 1;
 }
