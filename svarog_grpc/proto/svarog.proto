@@ -6,8 +6,8 @@ package svarog;
 service MpcPeer {
     rpc JoinSession(JoinSessionRequest) returns (SessionResult);
     
-    // A session is subject to abortion if:
-    // 
+    // When the upstream biz detected wrong Tx,
+    // call this to abort session.
     rpc AbortSession(AbortSessionRequest) returns (Void);
     
     rpc SetBizUrl(BizRecallUrl) returns (Void);
