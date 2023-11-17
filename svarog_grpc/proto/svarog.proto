@@ -10,7 +10,7 @@ service MpcPeer {
 }
 
 service MpcSessionManager {
-    rpc NewSession(SessionConfig) returns (Void);
+    rpc NewSession(SessionConfig) returns (SessionConfig);
     rpc GetSessionConfig(SessionId) returns (SessionConfig);
     rpc BlowWhistle(Whistle) returns (Void);
     rpc PostMessage(Message) returns (Void);
