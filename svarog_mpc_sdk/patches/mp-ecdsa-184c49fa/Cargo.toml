@@ -37,6 +37,7 @@ default_features = false
 
 [dependencies.curv-kzen]
 version = "0.9.0"
+# path = "../curv-kzen-0.9.0"
 default-features = false
 
 [dependencies.paillier]

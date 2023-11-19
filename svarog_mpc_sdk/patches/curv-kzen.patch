@@ -1,0 +1,19 @@
+commit 31fe7f024bfbe44928e7f2594e09accd887b41c9
+Author: winston-wen <winston-wen@hotmail.com>
+Date:   Sun Nov 19 10:29:18 2023 +0800
+
+    patch
+
+diff --git a/src/arithmetic/big_native/primes.rs b/src/arithmetic/big_native/primes.rs
+index 314af2d..5b9882b 100644
+--- a/src/arithmetic/big_native/primes.rs
++++ b/src/arithmetic/big_native/primes.rs
+@@ -503,7 +503,7 @@ fn is_bit_set(x: &BigUint, i: usize) -> bool {
+ fn gen_biguint_below<R: Rng>(r: &mut R, upper: &BigUint) -> BigUint {
+     loop {
+         let bits = upper.bits();
+-        let bytes = bits.div_ceil(&8);
++        let bytes = bits.div_ceil(8);
+         let mut buf = vec![0u8; bytes as usize];
+         r.fill_bytes(&mut buf);
+ 

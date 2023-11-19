@@ -1,23 +1,25 @@
 use std::collections::HashMap;
-pub type SparseArray<T> = HashMap<usize, T>;
+pub type SparseVec<T> = HashMap<usize, T>;
 
+mod gg18;
 mod aes;
+mod mta;
 pub use aes::*;
 mod keygen;
 pub use keygen::*;
-mod sign;
-pub use sign::*;
-mod pubkey;
-pub use pubkey::*;
-mod hd;
-pub use hd::*;
+// mod sign;
+// pub use sign::*;
+// mod pubkey;
+// pub use pubkey::*;
+// mod hd;
+// pub use hd::*;
 
 pub trait ToVecByKeyOrder<T> {
     fn values_sorted_by_key_asc(&self) -> Vec<T>;
     fn keys_asc(&self) -> Vec<usize>;
 }
 
-impl<T> ToVecByKeyOrder<T> for SparseArray<T>
+impl<T> ToVecByKeyOrder<T> for SparseVec<T>
 where
     T: Clone,
 {
