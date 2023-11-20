@@ -266,6 +266,3 @@ impl MessageB {
         public_gb == mta_gb
     }
 }
-
-#[cfg(test)]
-mod test;

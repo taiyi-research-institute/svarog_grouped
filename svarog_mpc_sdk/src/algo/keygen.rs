@@ -223,7 +223,7 @@ impl AlgoKeygen for MpcMember {
             if *id == self.attr_member_id() {
                 party_shares_outer.insert(*id, secret_shares_outer[id].clone());
             } else {
-                let aead = share_inner_vec.get(id).ifnone_()?;
+                let aead = share_outer_vec.get(id).ifnone_()?;
                 let key = enc_keys.get(id).unwrap().to_bytes();
                 let decrypted = aes::aes_decrypt(&key, &aead).catch_()?;
                 party_shares_outer

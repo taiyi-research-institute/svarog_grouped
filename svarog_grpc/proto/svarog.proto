@@ -6,10 +6,12 @@ package svarog;
 service MpcPeer {
     rpc JoinSession(JoinSessionRequest) returns (SessionResult);
     
-    // When the upstream biz detected wrong Tx,
-    // call this to abort session.
+    // When biz detected wrong Tx, call this to abort session.
     rpc AbortSession(AbortSessionRequest) returns (Void);
-    
+
+    // (up) called by biz
+    // (down) called by peer / client
+
     rpc SetBizUrl(BizCallbackUrl) returns (Void);
 }
 
@@ -18,6 +20,10 @@ service MpcSessionManager {
     // are set to "zero-value"s.
     rpc NewSession(SessionConfig) returns (SessionConfig);
     rpc GetSessionConfig(SessionId) returns (SessionConfig);
+    rpc GetSessionResult(SessionId) returns (SessionResult);
+
+    // (up) called by biz
+    // (down) called by peer
 
     rpc BlowWhistle(Whistle) returns (Void);
     rpc PostMessage(Message) returns (Void);
@@ -102,8 +108,9 @@ message Message {
 
 message SessionResult {
     oneof value {
-        string root_xpub = 1; // keygen or reshare result
-        Signature signature = 2; // sign result
+        Void not_ready = 1;
+        string root_xpub = 2; // keygen or reshare result
+        Signature signature = 3; // sign result
     }
 }
 
