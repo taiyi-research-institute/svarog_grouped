@@ -63,7 +63,7 @@ pub fn algo_get_hd_key(
     )?;
     let mut total_tweak = scalar_one.private_key().clone();
     for ccnum in path.as_ref() {
-        let depth: u8 = pk.attrs().depth.checked_add(1).if_none(HDE, "Depth")?;
+        let depth: u8 = pk.attrs().depth.checked_add(1).ifnone(HDE, "Depth")?;
         let mut hmac: HmacSha512 =
             HmacSha512::new_from_slice(&pk.attrs().chain_code).catch(HDE, "Crypto")?;
         if ccnum.is_hardened() {

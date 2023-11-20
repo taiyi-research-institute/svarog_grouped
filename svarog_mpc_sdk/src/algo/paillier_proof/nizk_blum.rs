@@ -5,9 +5,9 @@ use curv::{
 };
 use paillier::DecryptionKey;
 use serde::{Deserialize, Serialize};
+use xuanmi_base_support::*;
 
 use crate::algo::mta::*;
-use crate::PaillierProofError;
 
 const len_N: u16 = 2048;
 const m: u16 = 128; // 80;
@@ -27,17 +27,11 @@ pub struct AssocValues {
 }
 
 impl PaillierBlumModProof {
-    pub fn generate(
-        N: &BigInt,
-        dk: &DecryptionKey,
-        binding: &BigInt,
-    ) -> Result<Self, PaillierProofError> {
-        if *N != &dk.p * &dk.q
+    pub fn generate(N: &BigInt, dk: &DecryptionKey, binding: &BigInt) -> Outcome<Self> {
+        let setup_check = *N != &dk.p * &dk.q
             || dk.p.modulus(&BigInt::from(4)) != BigInt::from(3)
-            || dk.q.modulus(&BigInt::from(4)) != BigInt::from(3)
-        {
-            return Err(PaillierProofError::InvalidSetup);
-        }
+            || dk.q.modulus(&BigInt::from(4)) != BigInt::from(3);
+        assert_throw!(setup_check, "PaillierProofError.InvalidSetup");
 
         let mut w = BigInt::sample_below(N);
         while jacobi(&w, N) != Some(-1) {
@@ -109,7 +103,7 @@ impl AssocValues {
         w: &BigInt,
         i: u16,
         binding: &BigInt,
-    ) -> Result<Self, PaillierProofError> {
+    ) -> Outcome<Self> {
         let phi = (&dk.p - 1) * (&dk.q - 1);
         let y_i = gen_y(N, &w, i, binding);
         let z_i = BigInt::mod_pow(&y_i, &BigInt::mod_inv(N, &phi).unwrap(), N);
@@ -123,7 +117,7 @@ impl AssocValues {
                 return Ok(AssocValues { x_i, a_i, b_i, z_i });
             }
         }
-        return Err(PaillierProofError::FindFourthRootFailed);
+        throw!("PaillierProofError.FindFourthRootFailed", "");
     }
 }
 
@@ -168,7 +162,7 @@ pub fn fourth_root_mod(
     x: &BigInt,
     N: &BigInt,
     dk: &DecryptionKey,
-) -> Result<BigInt, PaillierProofError> {
+) -> Outcome<BigInt> {
     if *N == &dk.p * &dk.q
         && dk.p.modulus(&BigInt::from(4)) == BigInt::from(3)
         && dk.q.modulus(&BigInt::from(4)) == BigInt::from(3)
@@ -176,7 +170,7 @@ pub fn fourth_root_mod(
         let phi = (&dk.p - 1) * (&dk.q - 1);
         return Ok(BigInt::mod_pow(x, &((phi + 4) / 8).pow(2u32), N));
     } else {
-        return Err(PaillierProofError::InvalidInputFourthRoot);
+        throw!("PaillierProofError.InvalidInputFourthRoot", "");
     }
 }
 

@@ -8,7 +8,7 @@ use miniz_oxide::{deflate::compress_to_vec, inflate::decompress_to_vec};
 use serde::{de::DeserializeOwned, Serialize};
 use std::collections::{HashMap, HashSet};
 use std::time::{SystemTime, UNIX_EPOCH};
-use tonic;
+use tonic::{self, Request};
 use xuanmi_base_support::*;
 
 #[derive(Clone)]
@@ -29,7 +29,7 @@ pub struct MpcMember {
     tx_raw: Vec<u8>,
     session_id: String,
     expire_at: i64,
-    grpc_client: SvarogClient<tonic::transport::Channel>,
+    grpc_hostport: String,
 }
 
 pub enum MpcPeer {
@@ -40,9 +40,6 @@ pub enum MpcPeer {
 
 impl MpcMember {
     pub async fn new(grpc_hostport: &str) -> Outcome<Self> {
-        let grpc_client = SvarogClient::connect(grpc_hostport.to_owned())
-            .await
-            .catch_()?;
         Ok(MpcMember {
             member_group: HashMap::new(),
             member_names: HashMap::new(),
@@ -59,13 +56,15 @@ impl MpcMember {
             tx_raw: Vec::new(),
             session_id: "".to_string(),
             expire_at: 0,
-            grpc_client,
+            grpc_hostport: grpc_hostport.to_owned(),
         })
     }
 
     pub async fn fetch_session_config(&mut self, ses_id: &str) -> Outcome<SessionConfig> {
-        let ses_config = self
-            .grpc_client
+        let mut grpc_client = SvarogClient::connect(self.grpc_hostport.to_owned())
+            .await
+            .catch_()?;
+        let ses_config = grpc_client
             .get_session_config(SessionId {
                 session_id: ses_id.to_string(),
             })
@@ -75,7 +74,7 @@ impl MpcMember {
         Ok(ses_config)
     }
 
-    pub async fn use_session_config(
+    pub fn use_session_config(
         &mut self,
         ses_config: &SessionConfig,
         member_name: &str,
@@ -87,7 +86,7 @@ impl MpcMember {
             self.group_names
                 .insert(group_id as usize, group.group_name.clone());
             self.group_quora
-                .insert(group_id as usize, group.sub_quorum as usize);
+                .insert(group_id as usize, group.group_quorum as usize);
             for member in &group.members {
                 let member_id = member.member_id;
                 self.member_group
@@ -121,25 +120,31 @@ impl MpcMember {
         Ok(())
     }
 
-    // pub async fn post_terminate(&mut self, dst: MpcPeer)
-    fn assert_on_time(&mut self) -> Outcome<()> {
+    fn assert_on_time(&self) -> Outcome<()> {
         let now = SystemTime::now()
             .duration_since(UNIX_EPOCH)
             .expect("Time went backwards")
             .as_secs();
-        assert_throw!(now <= self.expire_at);
+        assert_throw!(now <= self.expire_at as u64, "Session expired");
         Ok(())
     }
 
-    pub async fn terminate_session(&mut self, request: &SessionTermination) -> Outcome<()> {
+    pub async fn terminate_session(&self, request: SessionTermination) -> Outcome<()> {
+        let mut grpc_client = SvarogClient::connect(self.grpc_hostport.to_owned())
+            .await
+            .catch_()?;
         self.assert_on_time().catch_()?;
-        let _ = self.grpc_client.terminate_session(request).await.catch_()?;
+            grpc_client.terminate_session(request).await.catch_()?;
+        Ok(())
     }
 
-    pub async fn post_message<T>(&mut self, dst: MpcPeer, purpose: &str, obj: &T) -> Outcome<()>
+    pub async fn post_message<T>(&self, dst: MpcPeer, purpose: &str, obj: &T) -> Outcome<()>
     where
         T: Serialize + DeserializeOwned,
     {
+        let mut grpc_client = SvarogClient::connect(self.grpc_hostport.to_owned())
+            .await
+            .catch_()?;
         match dst {
             MpcPeer::Member(member_id) => {
                 let bytes = obj.compress().catch_()?;
@@ -151,7 +156,7 @@ impl MpcMember {
                     body: bytes,
                 };
                 self.assert_on_time().catch_()?;
-                let _ = self.grpc_client.post_message(msg).await.catch_()?;
+                let _ = grpc_client.post_message(msg).await.catch_()?;
             }
             MpcPeer::Group(group_id) => {
                 let bytes = obj.compress().catch_()?;
@@ -164,7 +169,7 @@ impl MpcMember {
                         body: bytes.clone(),
                     };
                     self.assert_on_time().catch_()?;
-                    let _ = self.grpc_client.post_message(msg).await.catch_()?;
+                    let _ = grpc_client.post_message(msg).await.catch_()?;
                 }
             }
             MpcPeer::All() => {
@@ -178,17 +183,20 @@ impl MpcMember {
                         body: bytes.clone(),
                     };
                     self.assert_on_time().catch_()?;
-                    let _ = self.grpc_client.post_message(msg).await.catch_()?;
+                    let _ = grpc_client.post_message(msg).await.catch_()?;
                 }
             }
         }
         Ok(())
     }
 
-    pub async fn get_message<T>(&mut self, src: MpcPeer, purpose: &str) -> Outcome<SparseVec<T>>
+    pub async fn get_message<T>(&self, src: MpcPeer, purpose: &str) -> Outcome<SparseVec<T>>
     where
         T: Serialize + DeserializeOwned,
     {
+        let mut grpc_client = SvarogClient::connect(self.grpc_hostport.to_owned())
+            .await
+            .catch_()?;
         let mut sparse_array = SparseVec::<T>::new();
         match src {
             MpcPeer::Member(member_id) => {
@@ -200,8 +208,7 @@ impl MpcMember {
                     body: Vec::new(),
                 };
                 self.assert_on_time().catch_()?;
-                let msg = self
-                    .grpc_client
+                let msg = grpc_client
                     .get_message(msg)
                     .await
                     .catch_()?
@@ -219,8 +226,7 @@ impl MpcMember {
                         body: Vec::new(),
                     };
                     self.assert_on_time().catch_()?;
-                    let msg = self
-                        .grpc_client
+                    let msg = grpc_client
                         .get_message(msg)
                         .await
                         .catch_()?
@@ -239,8 +245,7 @@ impl MpcMember {
                         body: Vec::new(),
                     };
                     self.assert_on_time().catch_()?;
-                    let msg = self
-                        .grpc_client
+                    let msg = grpc_client
                         .get_message(msg)
                         .await
                         .catch_()?
@@ -254,7 +259,7 @@ impl MpcMember {
     }
 
     pub fn attr_member_id(&self) -> usize {
-        self.member_id as u16
+        self.member_id
     }
 
     pub fn attr_group_id(&self) -> usize {
@@ -292,12 +297,12 @@ impl MpcMember {
         n_attend
     }
 
-    pub fn attr_my_group_member_ids(&self) -> &HashSet<usize> {
+    pub fn attr_group_members(&self) -> &HashSet<usize> {
         self.group_member.get(&self.group_id).unwrap()
     }
 
-    pub fn attr_all_registered_member_ids(&self) -> &HashSet<usize> {
-        &self.member_names.keys()
+    pub fn attr_all_registered_members(&self) -> &SparseVec<usize> {
+        &self.member_group
     }
 }
 

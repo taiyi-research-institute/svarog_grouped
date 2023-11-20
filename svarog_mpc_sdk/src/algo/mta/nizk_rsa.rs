@@ -8,12 +8,12 @@
 //!  The Paillier cryptosystem requires a modulus $`N`$ to be relatively prime to $`\phi(N)`$, which is proven in ZK by taking $`N`$th roots of several random points.
 
 use crate::algo::mta::{sha::HSha512Trunc256, PRIME_BIT_LENGTH_IN_PAILLIER_SCHEMA};
-use crate::NIZKError;
 use curv::arithmetic::{BitManipulation, Converter, Integer, Modulo, One, Zero};
 use paillier::{extract_nroot, BigInt, DecryptionKey, EncryptionKey};
 use std::borrow::Borrow;
 use std::convert::TryFrom;
 use std::ops::Shl;
+use xuanmi_base_support::*;
 
 /// Initializes the PRNG used for random sampling of points in the algorithm
 /// with the sequence of decimal digits found somewhere in Pi:
@@ -101,39 +101,34 @@ pub fn gen_proof(dk: &DecryptionKey) -> Vec<BigInt> {
 
 /// Verifies non-interactive proof of correctness of public Paillier key.
 /// Checks also whether given public key has expected bit size
-pub fn verify(encryption: &EncryptionKey, sigmas: &[BigInt]) -> Result<(), NIZKError> {
-    if sigmas.len() != M2 {
-        return Err(NIZKError::WrongSizeOFProof);
-    }
+pub fn verify(encryption: &EncryptionKey, sigmas: &[BigInt]) -> Outcome<()> {
+    assert_throw!(sigmas.len() == M2, "NIZKError.WrongProofSize");
 
     let n = &encryption.n;
     let bit_length_of_n = n.bit_length();
 
-    if bit_length_of_n < N_MIN_SIZE {
-        return Err(NIZKError::WrongSizeOfN(bit_length_of_n));
-    }
+    assert_throw!(
+        bit_length_of_n >= N_MIN_SIZE,
+        &format!("NIZKError.WrongSizeOfN {}", bit_length_of_n)
+    );
 
     let rho_correct = sigmas
         .iter()
         .zip(get_rho_vec(n).into_iter())
         .all(|(sigma, rho)| rho == BigInt::mod_pow(&sigma, &n, &n));
-    if !rho_correct {
-        return Err(NIZKError::IncorrectRho);
-    }
-    check_divisibility(&n)
+    assert_throw!(rho_correct, "NIZKError.IncorrectRho");
+    check_divisibility(&n).catch_()?;
+    Ok(())
 }
 
-pub fn check_divisibility(n: &BigInt) -> Result<(), NIZKError> {
+pub fn check_divisibility(n: &BigInt) -> Outcome<()> {
     // let alpha_primorial = str::parse::<BigInt>(&PRIMORIAL).unwrap();
     // let primorial: &str = PRIMORIAL;
     // let alpha_primorial = BigInt::from_str_radix(primorial, 10u8).unwrap();
     let alpha_primorial = BigInt::from_str_radix(P, 10u8).unwrap();
     let gcd_test = alpha_primorial.gcd(&n);
-    if gcd_test == BigInt::one() {
-        Ok(())
-    } else {
-        Err(NIZKError::FailedProof)
-    }
+    assert_throw!(gcd_test != BigInt::one(), "NIZKError.FailedProof");
+    Ok(())
 }
 /// produces the hash value of the concatenation of `BigInt` numbers
 fn hash(bigints: &[&BigInt]) -> BigInt {
@@ -163,12 +158,12 @@ mod tests {
     use crate::algo::mta::PRIME_BIT_LENGTH_IN_PAILLIER_SCHEMA;
 
     #[test]
-    fn test_correct_zk_proof() -> Result<(), NIZKError> {
+    fn test_correct_zk_proof() -> Outcome<()> {
         let (encryption, decryption) =
             Paillier::keypair_with_modulus_size(2 * PRIME_BIT_LENGTH_IN_PAILLIER_SCHEMA).keys();
         for _ in 0..=10 {
             let proof = gen_proof(&decryption);
-            verify(&encryption, &proof)?
+            verify(&encryption, &proof).catch_()?;
         }
         Ok(())
     }

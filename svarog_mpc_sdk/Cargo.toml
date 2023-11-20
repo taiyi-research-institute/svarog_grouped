@@ -25,6 +25,10 @@ tokio = { version = "1.32.0", features = ["full"] }
 tokio-stream = "0.1"
 tonic = { version = "0.9", features = ["gzip", "channel"] }
 zk-paillier = { version = "0.4.3", default_features = false }
+sha3 = "0.10.8"
+num-bigint = { version = "0.4.4", features = ["serde"] }
+rand = "0.8.5"
+zeroize = "1.7.0"
 # tracing = "*"
 # tracing-subscriber = "*"
 # tracing-appender = "*"

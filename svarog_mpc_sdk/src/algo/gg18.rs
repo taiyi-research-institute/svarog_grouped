@@ -40,10 +40,10 @@ use paillier::{
 };
 use serde::{Deserialize, Serialize};
 use sha2::Sha256;
+use xuanmi_base_support::*;
 use zk_paillier::zkproofs::{DLogStatement, NiCorrectKeyProof};
 
-use crate::Error::{self, InvalidCom, InvalidKey, InvalidSS, InvalidSig};
-use crate::{NSFProof, PaillierBlumModProof};
+use super::paillier_proof::{NSFProof, PaillierBlumModProof};
 
 const SECURITY: usize = 256;
 const L: u32 = 256; // N0 = pq, where -sqrt(N0) * 2^l < p,q < sqrt(N0) * 2^l
@@ -302,19 +302,16 @@ impl Keys {
         pproofs_vec: &[PaillierKeyProofs],
         enc_keys: &[BigInt],
         dlog_statement_vec: &[DLogStatement],
-    ) -> Result<
-        (
-            (VerifiableSS<Secp256k1>, VerifiableSS<Secp256k1>),
-            (Vec<Scalar<Secp256k1>>, Vec<Scalar<Secp256k1>>),
-            u16,
-        ),
-        Error,
-    > {
+    ) -> Outcome<(
+        (VerifiableSS<Secp256k1>, VerifiableSS<Secp256k1>),
+        (Vec<Scalar<Secp256k1>>, Vec<Scalar<Secp256k1>>),
+        u16,
+    )> {
         // test length:
-        assert_eq!(decom_vec.len(), usize::from(params.0.share_count));
-        assert_eq!(bc1_vec.len(), usize::from(params.0.share_count));
-        assert_eq!(pproofs_vec.len(), usize::from(params.0.share_count));
-        assert_eq!(enc_keys.len(), usize::from(params.0.share_count));
+        assert_throw!(decom_vec.len() == usize::from(params.0.share_count));
+        assert_throw!(bc1_vec.len() == usize::from(params.0.share_count));
+        assert_throw!(pproofs_vec.len() == usize::from(params.0.share_count));
+        assert_throw!(enc_keys.len() == usize::from(params.0.share_count));
         // test paillier correct key and test decommitments
         let correct_key_correct_decom_all = (0..bc1_vec.len()).all(|i| {
             (
@@ -343,15 +340,12 @@ impl Keys {
             VerifiableSS::share(params.0.threshold, params.0.share_count, &self.u_i.0);
         let (vss_scheme_outer, secret_shares_outer) =
             VerifiableSS::share(params.1.threshold, params.1.share_count, &self.u_i.1);
-        if correct_key_correct_decom_all {
-            Ok((
-                (vss_scheme_inner, vss_scheme_outer),
-                (secret_shares_inner.to_vec(), secret_shares_outer.to_vec()),
-                self.party_index,
-            ))
-        } else {
-            Err(InvalidKey)
-        }
+        assert_throw!(correct_key_correct_decom_all);
+        Ok((
+            (vss_scheme_inner, vss_scheme_outer),
+            (secret_shares_inner.to_vec(), secret_shares_outer.to_vec()),
+            self.party_index,
+        ))
     }
 
     pub fn phase2_verify_vss_construct_keypair_phase3_pok_dlog(
@@ -361,20 +355,16 @@ impl Keys {
         secret_shares_vec: (&[Scalar<Secp256k1>], &[Scalar<Secp256k1>]),
         vss_scheme_vec: (&[VerifiableSS<Secp256k1>], &[VerifiableSS<Secp256k1>]),
         index: u16,
-    ) -> Result<
-        (
-            SharedKeys,
-            (DLogProof<Secp256k1, Sha256>, DLogProof<Secp256k1, Sha256>),
-        ),
-        Error,
-    > {
-        assert_eq!(y_vec.0.len(), usize::from(params.0.share_count));
-        assert_eq!(secret_shares_vec.0.len(), usize::from(params.0.share_count));
-        assert_eq!(vss_scheme_vec.0.len(), usize::from(params.0.share_count));
-
-        assert_eq!(y_vec.1.len(), usize::from(params.1.share_count));
-        assert_eq!(secret_shares_vec.1.len(), usize::from(params.1.share_count));
-        assert_eq!(vss_scheme_vec.1.len(), usize::from(params.1.share_count));
+    ) -> Outcome<(
+        SharedKeys,
+        (DLogProof<Secp256k1, Sha256>, DLogProof<Secp256k1, Sha256>),
+    )> {
+        assert_throw!(y_vec.0.len() == usize::from(params.0.share_count));
+        assert_throw!(secret_shares_vec.0.len() == usize::from(params.0.share_count));
+        assert_throw!(vss_scheme_vec.0.len() == usize::from(params.0.share_count));
+        assert_throw!(y_vec.1.len() == usize::from(params.1.share_count));
+        assert_throw!(secret_shares_vec.1.len() == usize::from(params.1.share_count));
+        assert_throw!(vss_scheme_vec.1.len() == usize::from(params.1.share_count));
 
         let correct_ss_verify_inner = (0..y_vec.0.len()).all(|i| {
             vss_scheme_vec.0[i]
@@ -389,17 +379,15 @@ impl Keys {
                 && vss_scheme_vec.1[i].commitments[0] == y_vec.1[i]
         });
 
-        if correct_ss_verify_inner && correct_ss_verify_outer {
-            let y: Point<Secp256k1> = y_vec.1.iter().sum(); // anyway, y will be reassigned soon
-            let x_i: (Scalar<Secp256k1>, Scalar<Secp256k1>) = (
-                secret_shares_vec.0.iter().sum(),
-                secret_shares_vec.1.iter().sum(),
-            );
-            let dlog_proof = (DLogProof::prove(&x_i.0), DLogProof::prove(&x_i.1));
-            Ok((SharedKeys { y, x_i }, dlog_proof))
-        } else {
-            Err(InvalidSS)
-        }
+        assert_throw!(correct_ss_verify_inner);
+        assert_throw!(correct_ss_verify_outer);
+        let y: Point<Secp256k1> = y_vec.1.iter().sum(); // anyway, y will be reassigned soon
+        let x_i: (Scalar<Secp256k1>, Scalar<Secp256k1>) = (
+            secret_shares_vec.0.iter().sum(),
+            secret_shares_vec.1.iter().sum(),
+        );
+        let dlog_proof = (DLogProof::prove(&x_i.0), DLogProof::prove(&x_i.1));
+        Ok((SharedKeys { y, x_i }, dlog_proof))
     }
 
     pub fn get_commitments_to_xi(
@@ -430,20 +418,18 @@ impl Keys {
         params: &Parameters,
         dlog_proofs_vec: &[(DLogProof<Secp256k1, Sha256>, DLogProof<Secp256k1, Sha256>)],
         y_vec: (&[Point<Secp256k1>], &[Point<Secp256k1>]),
-    ) -> Result<(), Error> {
-        assert_eq!(y_vec.0.len(), usize::from(params.share_count)); // or y_vec.1.len()
-        assert_eq!(dlog_proofs_vec.len(), usize::from(params.share_count));
+    ) -> Outcome<()> {
+        assert_throw!(y_vec.0.len() == usize::from(params.share_count)); // or y_vec.1.len()
+        assert_throw!(dlog_proofs_vec.len() == usize::from(params.share_count));
 
         let xi_dlog_verify_inner =
             (0..y_vec.0.len()).all(|i| DLogProof::verify(&dlog_proofs_vec[i].0).is_ok());
         let xi_dlog_verify_outer =
             (0..y_vec.1.len()).all(|i| DLogProof::verify(&dlog_proofs_vec[i].1).is_ok());
 
-        if xi_dlog_verify_inner && xi_dlog_verify_outer {
-            Ok(())
-        } else {
-            Err(InvalidKey)
-        }
+        assert_throw!(xi_dlog_verify_inner, "InvalidKey");
+        assert_throw!(xi_dlog_verify_outer, "InvalidKey");
+        Ok(())
     }
 }
 
@@ -601,7 +587,7 @@ impl SignKeys {
         b_proof_vec: &[&DLogProof<Secp256k1, Sha256>],
         phase1_decommit_vec: Vec<SignDecommitPhase1>,
         bc1_vec: &[SignBroadcastPhase1],
-    ) -> Result<Point<Secp256k1>, Error> {
+    ) -> Outcome<Point<Secp256k1>> {
         // note: b_proof_vec is populated using the results
         // from the MtAwc, which is handling the proof of knowledge verification of gamma_i such that
         // Gamme_i = gamma_i * G in the verify_proofs_get_alpha()
@@ -613,18 +599,12 @@ impl SignKeys {
                 ) == bc1_vec[i].com
         });
 
-        if test_b_vec_and_com {
-            Ok({
-                let gamma_sum: Point<Secp256k1> = phase1_decommit_vec
-                    .iter()
-                    .map(|decom| &decom.g_gamma_i)
-                    .sum();
-                // R
-                gamma_sum * delta_inv
-            })
-        } else {
-            Err(InvalidKey)
-        }
+        assert_throw!(test_b_vec_and_com, "InvalidKey");
+        let gamma_sum: Point<Secp256k1> = phase1_decommit_vec
+            .iter()
+            .map(|decom| &decom.g_gamma_i)
+            .sum();
+        Ok(gamma_sum * delta_inv)
     }
 }
 
@@ -711,7 +691,7 @@ impl LocalSignature {
         dlog_proofs_rho: &[DLogProof<Secp256k1, Sha256>],
         v_i: &Point<Secp256k1>,
         R: &Point<Secp256k1>,
-    ) -> Result<(Phase5Com2, Phase5DDecom2), Error> {
+    ) -> Outcome<(Phase5Com2, Phase5DDecom2)> {
         assert_eq!(decom_vec.len(), com_vec.len());
 
         let g = Point::generator();
@@ -747,7 +727,7 @@ impl LocalSignature {
             &self
                 .R
                 .x_coord()
-                .ok_or(Error::InvalidSig)?
+                .ifnone("InvalidSig", "")?
                 .mod_floor(Scalar::<Secp256k1>::group_order()),
         );
         let yr = &self.y * r;
@@ -764,20 +744,16 @@ impl LocalSignature {
             &blind_factor,
         );
 
-        if test_com_elgamal {
-            Ok({
-                (
-                    Phase5Com2 { com },
-                    Phase5DDecom2 {
-                        u_i,
-                        t_i,
-                        blind_factor,
-                    },
-                )
-            })
-        } else {
-            Err(InvalidCom)
-        }
+        assert_throw!(test_com_elgamal, "InvalidCom");
+
+        Ok((
+            Phase5Com2 { com },
+            Phase5DDecom2 {
+                u_i,
+                t_i,
+                blind_factor,
+            },
+        ))
     }
 
     pub fn phase5d(
@@ -785,9 +761,9 @@ impl LocalSignature {
         decom_vec2: &[Phase5DDecom2],
         com_vec2: &[Phase5Com2],
         decom_vec1: &[Phase5ADecom1],
-    ) -> Result<Scalar<Secp256k1>, Error> {
-        assert_eq!(decom_vec2.len(), decom_vec1.len());
-        assert_eq!(decom_vec2.len(), com_vec2.len());
+    ) -> Outcome<Scalar<Secp256k1>> {
+        assert_throw!(decom_vec2.len() == decom_vec1.len());
+        assert_throw!(decom_vec2.len() == com_vec2.len());
 
         let test_com = (0..com_vec2.len()).all(|i| {
             let input_hash = Sha256::new()
@@ -806,18 +782,12 @@ impl LocalSignature {
         let g = Point::generator();
         let biased_sum_tb = g + t_iter.chain(b_iter).sum::<Point<Secp256k1>>();
         let biased_sum_tb_minus_u = biased_sum_tb - u_iter.sum::<Point<Secp256k1>>();
-        if test_com {
-            if *g.as_point() == biased_sum_tb_minus_u {
-                Ok(self.s_i.clone())
-            } else {
-                Err(InvalidKey)
-            }
-        } else {
-            Err(InvalidCom)
-        }
+        assert_throw!(test_com, "InvalidCom");
+        assert_throw!(*g.as_point() == biased_sum_tb_minus_u, "InvalidKey");
+        Ok(self.s_i.clone())
     }
 
-    pub fn output_signature(&self, s_vec: &[Scalar<Secp256k1>]) -> Result<SignatureRecid, Error> {
+    pub fn output_signature(&self, s_vec: &[Scalar<Secp256k1>]) -> Outcome<SignatureRecid> {
         let mut s = &self.s_i + s_vec.iter().sum::<Scalar<Secp256k1>>();
         let s_bn = s.to_bigint();
 
@@ -825,13 +795,13 @@ impl LocalSignature {
             &self
                 .R
                 .x_coord()
-                .ok_or(Error::InvalidSig)?
+                .ifnone("InvalidSig", "")?
                 .mod_floor(Scalar::<Secp256k1>::group_order()),
         );
         let ry: BigInt = self
             .R
             .y_coord()
-            .ok_or(Error::InvalidSig)?
+            .ifnone("InvalidSig", "")?
             .mod_floor(Scalar::<Secp256k1>::group_order());
 
         /*
@@ -848,12 +818,9 @@ impl LocalSignature {
             recid ^= 1;
         }
         let sig = SignatureRecid { r, s, recid };
-        let ver = std_verify(&sig, &self.y, &self.m).is_ok();
-        if ver {
-            Ok(sig)
-        } else {
-            Err(InvalidSig)
-        }
+        let std_verified = std_verify(&sig, &self.y, &self.m).is_ok();
+        assert_throw!(std_verified, "InvalidSig");
+        Ok(sig)
     }
 }
 
@@ -886,7 +853,7 @@ impl LocalSignature {
 //     }
 // }
 
-pub fn std_verify(sig: &SignatureRecid, pk: &Point<Secp256k1>, msg: &BigInt) -> Result<(), Error> {
+pub fn std_verify(sig: &SignatureRecid, pk: &Point<Secp256k1>, msg: &BigInt) -> Outcome<()> {
     // input parameter msg is a hashed value of the raw message to be signed
     let s_inv: Scalar<Secp256k1> = sig
         .s
@@ -897,6 +864,6 @@ pub fn std_verify(sig: &SignatureRecid, pk: &Point<Secp256k1>, msg: &BigInt) -> 
     if r_prime.x_coord().unwrap_or_else(|| BigInt::from(0u16)) == sig.r.to_bigint() {
         Ok(())
     } else {
-        Err(InvalidSig)
+        throw!("InvalidSig", "");
     }
 }

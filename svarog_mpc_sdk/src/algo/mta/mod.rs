@@ -44,16 +44,16 @@ use paillier::{
     traits::EncryptWithChosenRandomness, Add, Decrypt, DecryptionKey, EncryptionKey, Mul, Paillier,
     Randomness, RawCiphertext, RawPlaintext,
 };
+use xuanmi_base_support::*;
 use zk_paillier::zkproofs::DLogStatement;
 
 use serde::{Deserialize, Serialize};
 use sha2::Sha256;
 use std::borrow::Borrow;
 
-use crate::{
-    algo::mta::range_proofs::{AliceProof, BobProof, BobProofExt},
+use crate::algo::mta::{
+    range_proofs::{AliceProof, BobProof, BobProofExt},
     BobProofType::{RangeProof, RangeProofExt},
-    Error::{self, InvalidProof},
 };
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -137,7 +137,7 @@ impl MessageB {
         alice_dlog_statement: &DLogStatement,
         bob_dlog_statement: &DLogStatement,
         mta_mode: MTAMode,
-    ) -> Result<(Self, Scalar<Secp256k1>, BigInt, BigInt), Error> {
+    ) -> Outcome<(Self, Scalar<Secp256k1>, BigInt, BigInt)> {
         let beta_tag = BigInt::sample_below(&alice_ek.n);
         let randomness = BigInt::sample_below(&alice_ek.n);
         let (m_b, beta) = MessageB::b_with_predefined_randomness(
@@ -149,7 +149,7 @@ impl MessageB {
             alice_dlog_statement,
             bob_dlog_statement,
             mta_mode,
-        )?;
+        ).catch_()?;
 
         Ok((m_b, beta, randomness, beta_tag))
     }
@@ -163,11 +163,10 @@ impl MessageB {
         alice_dlog_statement: &DLogStatement,
         bob_dlog_statement: &DLogStatement,
         mta_mode: MTAMode,
-    ) -> Result<(Self, Scalar<Secp256k1>), Error> {
+    ) -> Outcome<(Self, Scalar<Secp256k1>)> {
         // verify Alice's range proof
-        if !m_a.range_proof.verify(&m_a.c, alice_ek, bob_dlog_statement) {
-            return Err(InvalidProof);
-        }
+        let range_proof_verified = m_a.range_proof.verify(&m_a.c, alice_ek, bob_dlog_statement);
+        assert_throw!(range_proof_verified, "InvalidProof");
 
         let beta_tag_fe = Scalar::<Secp256k1>::from(beta_tag);
         let c_beta_tag = Paillier::encrypt_with_chosen_randomness(
@@ -229,22 +228,32 @@ impl MessageB {
         alice_dlog_statement: &DLogStatement,
         alice_ek: &EncryptionKey,
         X: &Point<Secp256k1>, // g^(w_i)
-    ) -> Result<(Scalar<Secp256k1>, BigInt), Error> {
+    ) -> Outcome<(Scalar<Secp256k1>, BigInt)> {
         let alice_share = Paillier::decrypt(dk, &RawCiphertext::from(self.c.clone()));
         let alpha = Scalar::<Secp256k1>::from(alice_share.0.as_ref());
 
         match &self.range_proof {
             // verify Bob's range proof
             RangeProof(bob_range_proof) => {
-                if !bob_range_proof.verify(&m_a.c, &self.c, alice_ek, alice_dlog_statement, None) {
-                    return Err(InvalidProof);
-                }
+                let bob_range_proof_verified = bob_range_proof.verify(
+                    &m_a.c,
+                    &self.c,
+                    alice_ek,
+                    alice_dlog_statement,
+                    None,
+                );
+                assert_throw!(bob_range_proof_verified, "InvalidProof");
             }
             // verify Bob's range proof with proof of knowing b
             RangeProofExt(bob_range_proof) => {
-                if !bob_range_proof.verify(&m_a.c, &self.c, alice_ek, alice_dlog_statement, X) {
-                    return Err(InvalidProof);
-                }
+                let bob_range_proof_verified_knowing_b = bob_range_proof.verify(
+                    &m_a.c,
+                    &self.c,
+                    alice_ek,
+                    alice_dlog_statement,
+                    X,
+                );
+                assert_throw!(bob_range_proof_verified_knowing_b, "InvalidProof");
             }
         };
         Ok((alpha, alice_share.0.into_owned()))

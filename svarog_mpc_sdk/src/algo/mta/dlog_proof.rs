@@ -69,7 +69,7 @@ impl DlogProof {
 #[cfg(test)]
 mod tests {
     use crate::algo::mta::dlog_proof::{DlogProof, DIGEST_BIT_LENGTH};
-    use crate::range_proofs::{ZkpSetup, DEFAULT_GROUP_ORDER_BIT_LENGTH};
+    use crate::algo::mta::range_proofs::{ZkpSetup, DEFAULT_GROUP_ORDER_BIT_LENGTH};
     use curv::arithmetic::BitManipulation;
 
     #[test]

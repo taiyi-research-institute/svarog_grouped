@@ -23,13 +23,12 @@ use curv::{
 use paillier::{EncryptionKey, PrimeSampable, Randomness};
 use serde::{Deserialize, Serialize};
 use sha2::Sha256;
+use xuanmi_base_support::*;
 use std::borrow::Borrow;
-use trace::trace;
 use zeroize::Zeroize;
 use zk_paillier::zkproofs::DLogStatement;
 
-use crate::algo::mta::{dlog_proof::DlogProof, nizk_rsa};
-use crate::ZkpSetupVerificationError;
+use super::{dlog_proof::DlogProof, nizk_rsa};
 
 pub const DEFAULT_GROUP_ORDER_BIT_LENGTH: usize = 2048;
 pub const DEFAULT_SAFE_PRIME_BIT_LENGTH: usize = DEFAULT_GROUP_ORDER_BIT_LENGTH / 2;
@@ -54,7 +53,6 @@ pub struct ZkpSetup {
 }
 
 /// Zeroes the memory occupied by the struct
-#[trace(pretty)]
 impl Zeroize for ZkpSetup {
     fn zeroize(&mut self) {
         self.p.zeroize();
@@ -67,7 +65,6 @@ impl Zeroize for ZkpSetup {
 }
 
 /// Zeroes the memory occupied by the struct
-#[trace(pretty)]
 impl Drop for ZkpSetup {
     fn drop(&mut self) {
         self.zeroize();
@@ -97,7 +94,6 @@ pub struct ZkpSetupProof {
     pub r: BigInt,
 }
 
-#[trace(pretty, prefix = "ZkpSetup::", disable(zero))]
 impl ZkpSetup {
     /// Generates new zero knowledge range proof setup.
     /// Uses Fujisaki - Okamoto bit commitment scheme, "Statistical zero knowledge protocols to prove modular polynomial relations"
@@ -162,24 +158,24 @@ impl ZkpSetup {
     }
 }
 
-#[trace(pretty, prefix = "ZkpPublicSetup::")]
 impl ZkpPublicSetup {
     const DLOG_PROOF_SECURITY_PARAMETER: u32 = 128;
     ///  Creates new public setup from private one
     ///
     ///  Creates new public setup and generates proof of knowledge of $` \alpha , \alpha^{-1} `$
     /// and proof of $` gcd(\tilde{N}, phi(\tilde{N} ) = 1 `$
-    pub fn from_private_zkp_setup(setup: &ZkpSetup) -> Self {
+    pub fn from_private_zkp_setup(setup: &ZkpSetup) -> Outcome<Self> {
+        let err = "InvalidZkpSetup";
         let One = &BigInt::one();
         let mut phi = (&setup.p - One) * (&setup.q - One);
-        let inv_alpha = BigInt::mod_inv(&setup.alpha, &phi).expect("alpha must be invertible"); // already checked in the constructor
+        let inv_alpha = BigInt::mod_inv(&setup.alpha, &phi).ifnone(err, "alpha must be invertible")?; // already checked in the constructor
         let inv_n_tilde =
-            BigInt::mod_inv(&setup.N_tilde, &phi).expect("N-tilde must be invertible");
-        let n_tilde_proof = Self::n_proof(&setup.N_tilde, &setup.p, &setup.q, &inv_n_tilde);
+            BigInt::mod_inv(&setup.N_tilde, &phi).ifnone(err, "N-tilde is no invertible")?;
+        let n_tilde_proof = Self::n_proof(&setup.N_tilde, &setup.p, &setup.q, &inv_n_tilde).catch_()?;
         let max_secret_length = phi.bit_length() as u32;
         phi.zeroize();
 
-        Self {
+        Ok(Self {
             N_tilde: setup.N_tilde.clone(),
             h1: setup.h1.clone(),
             h2: setup.h2.clone(),
@@ -200,23 +196,19 @@ impl ZkpPublicSetup {
                 Self::DLOG_PROOF_SECURITY_PARAMETER,
             ),
             n_tilde_proof,
-        }
+        })
     }
 
     /// verifies public setup
     ///
     /// verifies public setup using classic Schnorr's proof
-    pub fn verify(&self) -> Result<(), ZkpSetupVerificationError> {
-        Self::verify_n_proof(&self.N_tilde, &self.n_tilde_proof)?;
+    pub fn verify(&self) -> Outcome<()> {
+        Self::verify_n_proof(&self.N_tilde, &self.n_tilde_proof).catch_()?;
         let One = BigInt::one();
-        if self.h1 == One {
-            return Err(ZkpSetupVerificationError("h1 equals to 1".to_string()));
-        }
-        if self.h2 == One {
-            return Err(ZkpSetupVerificationError("h2 equals to 1".to_string()));
-        }
-        Self::verify_dlog_proof(&self.N_tilde, &self.h1, &self.h2, &self.dlog_proof)?;
-        Self::verify_dlog_proof(&self.N_tilde, &self.h2, &self.h1, &self.inv_dlog_proof)?;
+        assert_throw!(self.h1 != One);
+        assert_throw!(self.h2 != One);
+        Self::verify_dlog_proof(&self.N_tilde, &self.h1, &self.h2, &self.dlog_proof).catch_()?;
+        Self::verify_dlog_proof(&self.N_tilde, &self.h2, &self.h1, &self.inv_dlog_proof).catch_()?;
 
         Ok(())
     }
@@ -226,64 +218,47 @@ impl ZkpPublicSetup {
         h1: &BigInt,
         h2: &BigInt,
         proof: &DlogProof,
-    ) -> Result<(), ZkpSetupVerificationError> {
-        if !proof.verify(N_tilde, h1, h2) {
-            Err(ZkpSetupVerificationError("Dlog proof failed".to_string()))
-        } else {
-            Ok(())
-        }
+    ) -> Outcome<()> {
+        let proof_verified = proof.verify(N_tilde, h1, h2);
+        assert_throw!(proof_verified, "Dlog proof failed");
+        Ok(())
     }
 
     /// generates non-interactive proof of correctness of RSA modulus
-    pub fn n_proof(N_tilde: &BigInt, p: &BigInt, q: &BigInt, exp: &BigInt) -> Vec<BigInt> {
-        assert_eq!(*N_tilde, p * q.borrow());
+    pub fn n_proof(N_tilde: &BigInt, p: &BigInt, q: &BigInt, exp: &BigInt) -> Outcome<Vec<BigInt>> {
+        assert_throw!(*N_tilde == p * q.borrow());
 
-        nizk_rsa::get_rho_vec(&N_tilde)
+        let ret = nizk_rsa::get_rho_vec(&N_tilde)
             .into_iter()
             .map(|rho| BigInt::mod_pow(&rho, exp, N_tilde))
-            .collect()
+            .collect();
+        Ok(ret)
     }
 
     pub fn verify_n_proof(
         N_tilde: &BigInt,
         proof: &[BigInt],
-    ) -> Result<(), ZkpSetupVerificationError> {
-        if proof.len() != nizk_rsa::M2 {
-            return Err(ZkpSetupVerificationError(
-                "wrong length of proof vector".to_string(),
-            ));
-        }
-
-        if N_tilde.bit_length() < nizk_rsa::N_MIN_SIZE {
-            return Err(ZkpSetupVerificationError("modulus too small".to_string()));
-        }
+    ) -> Outcome<()> {
+        let err = "ZkpSetupVerificationError";
+        assert_throw!(proof.len() == nizk_rsa::M2, err, "wrong length of proof vector");
+        assert_throw!(N_tilde.bit_length() >= nizk_rsa::N_MIN_SIZE, err, "modulus too small");
 
         let zero = BigInt::zero();
-        nizk_rsa::check_divisibility(N_tilde).map_err(|_| {
-            ZkpSetupVerificationError("modulus divisible by a small prime(s)".to_string())
-        })?;
+        nizk_rsa::check_divisibility(N_tilde).catch(err, "modulus divisible by a small prime(s)")?;
 
         let x = proof
             .iter()
             .zip(nizk_rsa::get_rho_vec(&N_tilde))
-            .try_for_each(|(sigma, rho)| {
-                if sigma <= &zero {
-                    Err(ZkpSetupVerificationError(
-                        "ZKP of modulus' correctness: negative sigma".to_string(),
-                    ))
-                } else if rho != BigInt::mod_pow(&sigma, N_tilde, N_tilde) {
-                    Err(ZkpSetupVerificationError(
-                        "ZKP of modulus' correctness: invalid n-th root".to_string(),
-                    ))
-                } else {
-                    Ok(())
-                }
+            .try_for_each(|(sigma, rho)| -> Outcome<()> {
+                assert_throw!(sigma > &zero, err, "negative sigma");
+                let nth_root_valid = rho == BigInt::mod_pow(sigma, N_tilde, N_tilde);
+                assert_throw!(nth_root_valid, err, "invalid n-th root");
+                Ok(())
             });
         x
     }
 }
 
-#[trace(pretty)]
 impl Zeroize for ZkpPublicSetup {
     fn zeroize(&mut self) {
         self.N_tilde.zeroize();

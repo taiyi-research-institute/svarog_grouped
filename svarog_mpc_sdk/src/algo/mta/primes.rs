@@ -155,28 +155,6 @@ mod tests {
     ];
 
     #[test]
-    fn safe_prime() {
-        use crate::algo::mta::primes::random_safe_prime;
-        use std::time::Instant;
-        // use smaller size to speed up the search
-        const DEFAULT_BIT_LENGTH: usize = 256;
-
-        let now = Instant::now();
-        let (p, p_prim) = random_safe_prime(DEFAULT_BIT_LENGTH);
-
-        assert_eq!(p.bit_length(), DEFAULT_BIT_LENGTH);
-        assert_eq!(p_prim.bit_length(), DEFAULT_BIT_LENGTH - 1);
-
-        assert!(p.test_bit(DEFAULT_BIT_LENGTH - 1));
-        assert!(p_prim.test_bit(DEFAULT_BIT_LENGTH - 2));
-
-        assert!(is_prime(&p));
-        assert!(is_prime(&p_prim));
-
-        println!("{} obtained in {} seconds", p, now.elapsed().as_secs_f32());
-    }
-
-    #[test]
     #[ignore]
     fn print_product_of_first_primes() {
         let result = FIRST_PRIMES

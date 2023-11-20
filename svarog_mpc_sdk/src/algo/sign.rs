@@ -311,7 +311,7 @@ pub fn algo_sign(
     let mut xi_com_vec_inner: Vec<Point<Secp256k1>> =
         vec![Point::<Secp256k1>::zero(); n_actual as usize]; // len of parties, corresponds to signer_vec / sign_info_vec
     for (g_id, g_signers_vec) in group_signers.iter() {
-        let group_member_list = group_division.get(g_id).if_none(
+        let group_member_list = group_division.get(g_id).ifnone(
             InvalidQuarum,
             &(format!("Group_id ({}) not found in group_division", g_id) + exception_location),
         )?;
@@ -321,7 +321,7 @@ pub fn algo_sign(
             .collect::<Vec<_>>();
         let group_xi_com_vec = get_commitments_to_xi_given_n(n_keygen, &group_vss_scheme_vec);
         for &signer in g_signers_vec.iter() {
-            let pos = signer_vec.iter().position(|&e| e == signer).if_none(
+            let pos = signer_vec.iter().position(|&e| e == signer).ifnone(
                 InvalidQuarum,
                 &(format!("Element ({}) not found in signer_vec", signer) + exception_location),
             )?;
@@ -338,7 +338,7 @@ pub fn algo_sign(
     {
         let current_group = group_signers
             .get(&sign_info_vec[usize::from(i - 1)].1)
-            .if_none(
+            .ifnone(
                 InvalidQuarum,
                 &(format!(
                     "Group_id ({}) not found in group_signers",

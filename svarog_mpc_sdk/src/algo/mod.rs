@@ -7,6 +7,7 @@ mod mta;
 pub use aes::*;
 mod keygen;
 pub use keygen::*;
+mod paillier_proof;
 // mod sign;
 // pub use sign::*;
 // mod pubkey;
