@@ -7,10 +7,10 @@ use paillier::DecryptionKey;
 use serde::{Deserialize, Serialize};
 use xuanmi_base_support::*;
 
-use crate::algo::mta::*;
+use crate::mta::*;
 
-const len_N: u16 = 2048;
-const m: u16 = 128; // 80;
+const LEN_N: u16 = 2048;
+const M: u16 = 128; // 80;
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct PaillierBlumModProof {
@@ -37,8 +37,8 @@ impl PaillierBlumModProof {
         while jacobi(&w, N) != Some(-1) {
             w = BigInt::sample_below(N);
         }
-        let mut assoc_vec: Vec<AssocValues> = Vec::with_capacity(m as usize);
-        for i in 1..=m {
+        let mut assoc_vec: Vec<AssocValues> = Vec::with_capacity(M as usize);
+        for i in 1..=M {
             assoc_vec.push(AssocValues::generate(N, dk, &w, i, binding)?);
         }
         Ok(PaillierBlumModProof { w, assoc_vec })
@@ -57,13 +57,13 @@ impl PaillierBlumModProof {
         if self.w <= BigInt::zero() || self.w >= *N {
             return false;
         }
-        if self.assoc_vec.len() != m as usize {
+        if self.assoc_vec.len() != M as usize {
             return false;
         }
         if jacobi(&self.w, N) != Some(-1) {
             return false;
         }
-        for i in 1..=m {
+        for i in 1..=M {
             let assoc = &self.assoc_vec[i as usize - 1];
             if assoc.x_i <= BigInt::zero()
                 || assoc.x_i >= *N
@@ -147,7 +147,7 @@ pub fn gen_y(N: &BigInt, w: &BigInt, i: u16, binding: &BigInt) -> BigInt {
             hasher.update(&as_vec);
         }
         let mut reader = hasher.finalize_xof();
-        let mut res = [0u8; len_N as usize / 8];
+        let mut res = [0u8; LEN_N as usize / 8];
         reader.read(&mut res);
         let candidate = BigInt::from_bytes(&res).modulus(N);
         if candidate.gcd(N) == BigInt::one() {
@@ -158,11 +158,7 @@ pub fn gen_y(N: &BigInt, w: &BigInt, i: u16, binding: &BigInt) -> BigInt {
     }
 }
 
-pub fn fourth_root_mod(
-    x: &BigInt,
-    N: &BigInt,
-    dk: &DecryptionKey,
-) -> Outcome<BigInt> {
+pub fn fourth_root_mod(x: &BigInt, N: &BigInt, dk: &DecryptionKey) -> Outcome<BigInt> {
     if *N == &dk.p * &dk.q
         && dk.p.modulus(&BigInt::from(4)) == BigInt::from(3)
         && dk.q.modulus(&BigInt::from(4)) == BigInt::from(3)

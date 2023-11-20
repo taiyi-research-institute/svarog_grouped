@@ -95,7 +95,7 @@ impl HSha512Trunc256 {
 
 #[cfg(test)]
 mod tests {
-    use crate::algo::mta::sha::HSha512Trunc256;
+    use crate::mta::sha::HSha512Trunc256;
     use curv::{
         arithmetic::{traits::Samplable, BasicOps},
         elliptic::curves::{secp256_k1::Secp256k1, Scalar},

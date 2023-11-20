@@ -141,7 +141,7 @@ fn rewrite(n: &BigInt) -> (BigInt, BigInt) {
 
 #[cfg(test)]
 mod tests {
-    use crate::algo::mta::primes::is_prime;
+    use crate::mta::primes::is_prime;
     use curv::{
         arithmetic::{BitManipulation, One},
         BigInt,

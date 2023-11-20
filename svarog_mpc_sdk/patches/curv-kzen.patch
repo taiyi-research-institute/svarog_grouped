@@ -1,9 +1,3 @@
-commit 31fe7f024bfbe44928e7f2594e09accd887b41c9
-Author: winston-wen <winston-wen@hotmail.com>
-Date:   Sun Nov 19 10:29:18 2023 +0800
-
-    patch
-
 diff --git a/src/arithmetic/big_native/primes.rs b/src/arithmetic/big_native/primes.rs
 index 314af2d..5b9882b 100644
 --- a/src/arithmetic/big_native/primes.rs
@@ -17,3 +11,12 @@ index 314af2d..5b9882b 100644
          let mut buf = vec![0u8; bytes as usize];
          r.fill_bytes(&mut buf);
  
+diff --git a/src/lib.rs b/src/lib.rs
+index 9c5df94..9194d72 100644
+--- a/src/lib.rs
++++ b/src/lib.rs
+@@ -1,3 +1,4 @@
++#![allow(dead_code)]
+ /*
+     This file is part of Curv library
+     Copyright 2018 by Kzen Networks

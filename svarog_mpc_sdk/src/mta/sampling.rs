@@ -26,7 +26,7 @@ pub fn sample_generator_from_cyclic_group(
         let alpha = BigInt::sample_below(modulo);
         if order_factorization
             .iter()
-            .find(|&&x| BigInt::mod_pow(&alpha, &(order / x), modulo.borrow()) == One)
+            .find(|&&x| BigInt::mod_pow(&alpha, &(order / x), modulo) == One)
             .is_none()
         {
             return alpha;

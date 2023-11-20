@@ -2,7 +2,7 @@
 //! https://github.com/ing-bank/threshold-signatures/blob/master/src/algorithms/dlog_proof.rs
 //! to support curv-kzen from v0.2.8 to v0.9.0
 
-use crate::algo::mta::sha::HSha512Trunc256;
+use super::sha::HSha512Trunc256;
 use curv::arithmetic::traits::Samplable;
 use curv::arithmetic::BasicOps;
 use curv::arithmetic::Converter;
@@ -68,8 +68,8 @@ impl DlogProof {
 
 #[cfg(test)]
 mod tests {
-    use crate::algo::mta::dlog_proof::{DlogProof, DIGEST_BIT_LENGTH};
-    use crate::algo::mta::range_proofs::{ZkpSetup, DEFAULT_GROUP_ORDER_BIT_LENGTH};
+    use crate::mta::dlog_proof::{DlogProof, DIGEST_BIT_LENGTH};
+    use crate::mta::range_proofs::{ZkpSetup, DEFAULT_GROUP_ORDER_BIT_LENGTH};
     use curv::arithmetic::BitManipulation;
 
     #[test]

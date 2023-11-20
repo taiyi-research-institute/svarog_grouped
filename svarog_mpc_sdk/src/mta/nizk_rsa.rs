@@ -7,7 +7,7 @@
 //!
 //!  The Paillier cryptosystem requires a modulus $`N`$ to be relatively prime to $`\phi(N)`$, which is proven in ZK by taking $`N`$th roots of several random points.
 
-use crate::algo::mta::{sha::HSha512Trunc256, PRIME_BIT_LENGTH_IN_PAILLIER_SCHEMA};
+use super::{sha::HSha512Trunc256, PRIME_BIT_LENGTH_IN_PAILLIER_SCHEMA};
 use curv::arithmetic::{BitManipulation, Converter, Integer, Modulo, One, Zero};
 use paillier::{extract_nroot, BigInt, DecryptionKey, EncryptionKey};
 use std::borrow::Borrow;
@@ -155,7 +155,7 @@ mod tests {
     use paillier::Paillier;
 
     use super::*;
-    use crate::algo::mta::PRIME_BIT_LENGTH_IN_PAILLIER_SCHEMA;
+    use crate::mta::PRIME_BIT_LENGTH_IN_PAILLIER_SCHEMA;
 
     #[test]
     fn test_correct_zk_proof() -> Outcome<()> {

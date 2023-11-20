@@ -18,7 +18,7 @@
 
     @license GPL-3.0+ <https://github.com/KZen-networks/multi-party-ecdsa/blob/master/LICENSE>
 */
-
+#![allow(non_snake_case)]
 mod primes;
 pub use primes::*;
 mod nizk_rsa;
@@ -29,6 +29,8 @@ mod sampling;
 pub use sampling::*;
 pub mod dlog_proof;
 pub mod range_proofs;
+use range_proofs::{AliceProof, BobProof, BobProofExt};
+use BobProofType::{RangeProof, RangeProofExt};
 
 ///current recommended bit size for the primes in Paillier schema
 pub(crate) const PRIME_BIT_LENGTH_IN_PAILLIER_SCHEMA: usize = 1024;
@@ -50,11 +52,6 @@ use zk_paillier::zkproofs::DLogStatement;
 use serde::{Deserialize, Serialize};
 use sha2::Sha256;
 use std::borrow::Borrow;
-
-use crate::algo::mta::{
-    range_proofs::{AliceProof, BobProof, BobProofExt},
-    BobProofType::{RangeProof, RangeProofExt},
-};
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct MessageA {
@@ -149,7 +146,8 @@ impl MessageB {
             alice_dlog_statement,
             bob_dlog_statement,
             mta_mode,
-        ).catch_()?;
+        )
+        .catch_()?;
 
         Ok((m_b, beta, randomness, beta_tag))
     }
@@ -235,24 +233,14 @@ impl MessageB {
         match &self.range_proof {
             // verify Bob's range proof
             RangeProof(bob_range_proof) => {
-                let bob_range_proof_verified = bob_range_proof.verify(
-                    &m_a.c,
-                    &self.c,
-                    alice_ek,
-                    alice_dlog_statement,
-                    None,
-                );
+                let bob_range_proof_verified =
+                    bob_range_proof.verify(&m_a.c, &self.c, alice_ek, alice_dlog_statement, None);
                 assert_throw!(bob_range_proof_verified, "InvalidProof");
             }
             // verify Bob's range proof with proof of knowing b
             RangeProofExt(bob_range_proof) => {
-                let bob_range_proof_verified_knowing_b = bob_range_proof.verify(
-                    &m_a.c,
-                    &self.c,
-                    alice_ek,
-                    alice_dlog_statement,
-                    X,
-                );
+                let bob_range_proof_verified_knowing_b =
+                    bob_range_proof.verify(&m_a.c, &self.c, alice_ek, alice_dlog_statement, X);
                 assert_throw!(bob_range_proof_verified_knowing_b, "InvalidProof");
             }
         };

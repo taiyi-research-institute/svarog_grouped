@@ -20,6 +20,11 @@
     @license GPL-3.0+ <https://github.com/KZen-networks/multi-party-ecdsa/blob/master/LICENSE>
 */
 
+mod keygen;
+pub use keygen::*;
+mod aes;
+pub use aes::*;
+
 use std::convert::TryFrom;
 
 // use centipede::juggling::proof_system::{Helgamalsegmented, Witness};

@@ -42,6 +42,7 @@ features = ["num-bigint"]
 [package.metadata.patch.curv-kzen]
 version = "0.9.0"
 patches = [{ path = "patches/curv-kzen.patch", source = "GithubPrDiff" }]
+allow = ["dead_code", "unused_imports", "unused_variables", "unused_mut"]
 
 [patch.crates-io]
 curv-kzen = { path = "./target/patch/curv-kzen-0.9.0" }
@@ -50,10 +51,11 @@ curv-kzen = { path = "./target/patch/curv-kzen-0.9.0" }
 version = "0.12.0"
 features = ["arithmetic", "serde", "ecdsa", "ecdsa-core"]
 
-[dependencies.multi-party-ecdsa]
-path = "patches/mp-ecdsa-184c49fa"
-# git = "https://github.com/KZen-networks/multi-party-ecdsa"
-# tag = "v0.8.1"
+# [dependencies.multi-party-ecdsa]
+# path = "patches/mp-ecdsa-184c49fa"
+
+[dependencies.svarog_grpc]
+path = "../svarog_grpc"
 
 [dependencies.paillier]
 package = "kzen-paillier"
@@ -83,3 +85,9 @@ opt-level = 3
 lto = true
 codegen-units = 1
 strip = true
+
+# [profile.dev.package."curv-kzen".warning]
+# allow = ["dead_code", "unused_imports", "unused_variables", "unused_mut"]
+
+# [profile.release.package."curv-kzen".warning]
+# allow = ["dead_code", "unused_imports", "unused_variables", "unused_mut"]

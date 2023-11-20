@@ -1,7 +1,8 @@
-mod algo;
-mod protogen;
-mod mpc_member;
+pub mod gg18;
+pub mod mpc_member;
+mod mta;
+mod paillier_proof;
+pub use mpc_member::*;
+mod util;
 
-fn main() {
-    
-}
+fn main() {}
