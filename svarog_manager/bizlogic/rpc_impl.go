@@ -4,7 +4,6 @@ import (
 	"bytes"
 	"context"
 	"errors"
-	"math"
 	"sort"
 	"time"
 
@@ -16,9 +15,9 @@ import (
 func (srv *SessionManager) NewSession(
 	ctx context.Context,
 	req *pb.SessionConfig,
-) (resp *pb.Void, err error) {
+) (resp *pb.SessionConfig, err error) {
 	tr := srv.db.Begin()
-	resp = &pb.Void{}
+	resp = req
 
 	{ // Validate the request
 		// TODO: Assert that session type is one of "keygen", "sign", "reshare".
@@ -53,7 +52,7 @@ func (srv *SessionManager) NewSession(
 			req.Groups[i].GroupId = uint64(i + 1)
 		}
 
-		// sourt members by (GroupId, MemberName)
+		// sort members by (GroupId, MemberName)
 		for _, group := range req.Groups {
 			sort.SliceStable(group.Members, func(i, j int) bool {
 				name_lt := group.Members[i].MemberName < group.Members[j].MemberName
@@ -72,6 +71,12 @@ func (srv *SessionManager) NewSession(
 	}
 
 	{ // Save session to db
+		if req.ExpireBeforeFinish == 0 {
+			req.ExpireBeforeFinish = time.Now().Unix() + 1200
+		}
+		if req.ExpireAfterFinish == 0 {
+			req.ExpireAfterFinish = time.Now().Unix() + 86400
+		}
 		marshalled_tx_hashes, err := proto.Marshal(req.ToSign)
 		new_session := MpcSession{
 			SessionId:          req.SessionId,
@@ -80,19 +85,13 @@ func (srv *SessionManager) NewSession(
 			ReshareKeyQuorum:   req.ReshareKeyQuorum,
 			ExpireBeforeFinish: req.ExpireBeforeFinish,
 			ExpireAfterFinish:  req.ExpireAfterFinish,
-			DerivePath:         req.DerivePath,
 			MarshalledTxHashes: marshalled_tx_hashes,
 			Result:             make([]byte, 0),
 			DataCache:          make([]byte, 0),
 			TerminationHash:    make([]byte, 0),
 			Whistle:            "",
 		}
-		if req.ExpireBeforeFinish == 0 {
-			new_session.ExpireBeforeFinish = time.Now().Unix() + 1200
-		}
-		if req.ExpireAfterFinish == 0 {
-			new_session.ExpireAfterFinish = math.MaxInt64
-		}
+
 		err = tr.Create(&new_session).Error
 		if err != nil {
 			tr.Rollback()
@@ -378,7 +377,6 @@ func (srv *SessionManager) GetSessionConfig(
 		resp.ReshareKeyQuorum = session.ReshareKeyQuorum
 		resp.ExpireBeforeFinish = session.ExpireBeforeFinish
 		resp.ExpireAfterFinish = session.ExpireAfterFinish
-		resp.DerivePath = session.DerivePath
 		err = proto.Unmarshal(session.Result, resp.ToSign)
 		if err != nil {
 			tr.Rollback()

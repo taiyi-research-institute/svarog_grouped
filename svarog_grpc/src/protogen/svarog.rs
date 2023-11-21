@@ -20,38 +20,28 @@ pub struct SessionConfig {
     /// When creating session, set to 0
     #[prost(int64, tag = "7")]
     pub expire_after_finish: i64,
-    /// "" means unset
-    #[prost(string, tag = "16")]
-    pub derive_path: ::prost::alloc::string::String,
     /// [] means unset
     #[prost(message, optional, tag = "17")]
-    pub to_sign: ::core::option::Option<TxHashArray>,
+    pub to_sign: ::core::option::Option<ToSign>,
 }
 #[derive(serde::Serialize, serde::Deserialize)]
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct JoinSessionRequest {
-    /// Name of MPC participant
     #[prost(string, tag = "1")]
+    pub session_id: ::prost::alloc::string::String,
+    /// Name of MPC participant
+    #[prost(string, tag = "2")]
     pub member_name: ::prost::alloc::string::String,
     /// Name of root private key
-    #[prost(string, tag = "2")]
+    #[prost(string, tag = "3")]
     pub key_name: ::prost::alloc::string::String,
     /// Used for authentication
-    #[prost(string, tag = "3")]
-    pub token: ::prost::alloc::string::String,
-    /// Only end-user provides this
     #[prost(string, tag = "4")]
+    pub token: ::prost::alloc::string::String,
+    /// Only end-user provides this. Leave blank for API calls.
+    #[prost(string, tag = "5")]
     pub mnemonics: ::prost::alloc::string::String,
-    #[prost(message, optional, tag = "17")]
-    pub ses_config: ::core::option::Option<SessionConfig>,
-}
-#[derive(serde::Serialize, serde::Deserialize)]
-#[allow(clippy::derive_partial_eq_without_eq)]
-#[derive(Clone, PartialEq, ::prost::Message)]
-pub struct GetSessionConfigRequest {
-    #[prost(string, tag = "2")]
-    pub ses_id: ::prost::alloc::string::String,
 }
 #[derive(serde::Serialize, serde::Deserialize)]
 #[allow(clippy::derive_partial_eq_without_eq)]
@@ -108,9 +98,18 @@ pub struct Void {}
 #[derive(serde::Serialize, serde::Deserialize)]
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
-pub struct TxHashArray {
-    #[prost(bytes = "vec", repeated, tag = "1")]
-    pub values: ::prost::alloc::vec::Vec<::prost::alloc::vec::Vec<u8>>,
+pub struct TxHash {
+    #[prost(string, tag = "1")]
+    pub derive_path: ::prost::alloc::string::String,
+    #[prost(bytes = "vec", tag = "2")]
+    pub tx_hash: ::prost::alloc::vec::Vec<u8>,
+}
+#[derive(serde::Serialize, serde::Deserialize)]
+#[allow(clippy::derive_partial_eq_without_eq)]
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct ToSign {
+    #[prost(message, repeated, tag = "1")]
+    pub tx_hashes: ::prost::alloc::vec::Vec<TxHash>,
 }
 #[derive(serde::Serialize, serde::Deserialize)]
 #[allow(clippy::derive_partial_eq_without_eq)]
@@ -191,6 +190,7 @@ pub mod mpc_peer_client {
     use tonic::codegen::*;
     use tonic::codegen::http::Uri;
     /// A peer handles multiple shards of multiple keys.
+    /// All called by biz
     #[derive(Debug, Clone)]
     pub struct MpcPeerClient<T> {
         inner: tonic::client::Grpc<T>,
@@ -274,7 +274,7 @@ pub mod mpc_peer_client {
         pub async fn join_session(
             &mut self,
             request: impl tonic::IntoRequest<super::JoinSessionRequest>,
-        ) -> std::result::Result<tonic::Response<super::SessionFruit>, tonic::Status> {
+        ) -> std::result::Result<tonic::Response<super::Void>, tonic::Status> {
             self.inner
                 .ready()
                 .await
@@ -291,6 +291,28 @@ pub mod mpc_peer_client {
             let mut req = request.into_request();
             req.extensions_mut()
                 .insert(GrpcMethod::new("svarog.MpcPeer", "JoinSession"));
+            self.inner.unary(req, path, codec).await
+        }
+        pub async fn get_session_fruit(
+            &mut self,
+            request: impl tonic::IntoRequest<super::SessionId>,
+        ) -> std::result::Result<tonic::Response<super::SessionFruit>, tonic::Status> {
+            self.inner
+                .ready()
+                .await
+                .map_err(|e| {
+                    tonic::Status::new(
+                        tonic::Code::Unknown,
+                        format!("Service was not ready: {}", e.into()),
+                    )
+                })?;
+            let codec = tonic::codec::ProstCodec::default();
+            let path = http::uri::PathAndQuery::from_static(
+                "/svarog.MpcPeer/GetSessionFruit",
+            );
+            let mut req = request.into_request();
+            req.extensions_mut()
+                .insert(GrpcMethod::new("svarog.MpcPeer", "GetSessionFruit"));
             self.inner.unary(req, path, codec).await
         }
         /// When biz detected wrong Tx, call this to abort session.
@@ -314,25 +336,6 @@ pub mod mpc_peer_client {
             let mut req = request.into_request();
             req.extensions_mut()
                 .insert(GrpcMethod::new("svarog.MpcPeer", "AbortSession"));
-            self.inner.unary(req, path, codec).await
-        }
-        pub async fn set_biz_url(
-            &mut self,
-            request: impl tonic::IntoRequest<super::BizCallbackUrl>,
-        ) -> std::result::Result<tonic::Response<super::Void>, tonic::Status> {
-            self.inner
-                .ready()
-                .await
-                .map_err(|e| {
-                    tonic::Status::new(
-                        tonic::Code::Unknown,
-                        format!("Service was not ready: {}", e.into()),
-                    )
-                })?;
-            let codec = tonic::codec::ProstCodec::default();
-            let path = http::uri::PathAndQuery::from_static("/svarog.MpcPeer/SetBizUrl");
-            let mut req = request.into_request();
-            req.extensions_mut().insert(GrpcMethod::new("svarog.MpcPeer", "SetBizUrl"));
             self.inner.unary(req, path, codec).await
         }
     }
@@ -468,28 +471,6 @@ pub mod mpc_session_manager_client {
                 .insert(GrpcMethod::new("svarog.MpcSessionManager", "GetSessionConfig"));
             self.inner.unary(req, path, codec).await
         }
-        pub async fn get_session_fruit(
-            &mut self,
-            request: impl tonic::IntoRequest<super::SessionId>,
-        ) -> std::result::Result<tonic::Response<super::SessionFruit>, tonic::Status> {
-            self.inner
-                .ready()
-                .await
-                .map_err(|e| {
-                    tonic::Status::new(
-                        tonic::Code::Unknown,
-                        format!("Service was not ready: {}", e.into()),
-                    )
-                })?;
-            let codec = tonic::codec::ProstCodec::default();
-            let path = http::uri::PathAndQuery::from_static(
-                "/svarog.MpcSessionManager/GetSessionFruit",
-            );
-            let mut req = request.into_request();
-            req.extensions_mut()
-                .insert(GrpcMethod::new("svarog.MpcSessionManager", "GetSessionFruit"));
-            self.inner.unary(req, path, codec).await
-        }
         pub async fn blow_whistle(
             &mut self,
             request: impl tonic::IntoRequest<super::Whistle>,
@@ -590,18 +571,19 @@ pub mod mpc_peer_server {
         async fn join_session(
             &self,
             request: tonic::Request<super::JoinSessionRequest>,
+        ) -> std::result::Result<tonic::Response<super::Void>, tonic::Status>;
+        async fn get_session_fruit(
+            &self,
+            request: tonic::Request<super::SessionId>,
         ) -> std::result::Result<tonic::Response<super::SessionFruit>, tonic::Status>;
         /// When biz detected wrong Tx, call this to abort session.
         async fn abort_session(
             &self,
             request: tonic::Request<super::AbortSessionRequest>,
         ) -> std::result::Result<tonic::Response<super::Void>, tonic::Status>;
-        async fn set_biz_url(
-            &self,
-            request: tonic::Request<super::BizCallbackUrl>,
-        ) -> std::result::Result<tonic::Response<super::Void>, tonic::Status>;
     }
     /// A peer handles multiple shards of multiple keys.
+    /// All called by biz
     #[derive(Debug)]
     pub struct MpcPeerServer<T: MpcPeer> {
         inner: _Inner<T>,
@@ -688,7 +670,7 @@ pub mod mpc_peer_server {
                         T: MpcPeer,
                     > tonic::server::UnaryService<super::JoinSessionRequest>
                     for JoinSessionSvc<T> {
-                        type Response = super::SessionFruit;
+                        type Response = super::Void;
                         type Future = BoxFuture<
                             tonic::Response<Self::Response>,
                             tonic::Status,
@@ -712,6 +694,50 @@ pub mod mpc_peer_server {
                     let fut = async move {
                         let inner = inner.0;
                         let method = JoinSessionSvc(inner);
+                        let codec = tonic::codec::ProstCodec::default();
+                        let mut grpc = tonic::server::Grpc::new(codec)
+                            .apply_compression_config(
+                                accept_compression_encodings,
+                                send_compression_encodings,
+                            )
+                            .apply_max_message_size_config(
+                                max_decoding_message_size,
+                                max_encoding_message_size,
+                            );
+                        let res = grpc.unary(method, req).await;
+                        Ok(res)
+                    };
+                    Box::pin(fut)
+                }
+                "/svarog.MpcPeer/GetSessionFruit" => {
+                    #[allow(non_camel_case_types)]
+                    struct GetSessionFruitSvc<T: MpcPeer>(pub Arc<T>);
+                    impl<T: MpcPeer> tonic::server::UnaryService<super::SessionId>
+                    for GetSessionFruitSvc<T> {
+                        type Response = super::SessionFruit;
+                        type Future = BoxFuture<
+                            tonic::Response<Self::Response>,
+                            tonic::Status,
+                        >;
+                        fn call(
+                            &mut self,
+                            request: tonic::Request<super::SessionId>,
+                        ) -> Self::Future {
+                            let inner = Arc::clone(&self.0);
+                            let fut = async move {
+                                (*inner).get_session_fruit(request).await
+                            };
+                            Box::pin(fut)
+                        }
+                    }
+                    let accept_compression_encodings = self.accept_compression_encodings;
+                    let send_compression_encodings = self.send_compression_encodings;
+                    let max_decoding_message_size = self.max_decoding_message_size;
+                    let max_encoding_message_size = self.max_encoding_message_size;
+                    let inner = self.inner.clone();
+                    let fut = async move {
+                        let inner = inner.0;
+                        let method = GetSessionFruitSvc(inner);
                         let codec = tonic::codec::ProstCodec::default();
                         let mut grpc = tonic::server::Grpc::new(codec)
                             .apply_compression_config(
@@ -758,48 +784,6 @@ pub mod mpc_peer_server {
                     let fut = async move {
                         let inner = inner.0;
                         let method = AbortSessionSvc(inner);
-                        let codec = tonic::codec::ProstCodec::default();
-                        let mut grpc = tonic::server::Grpc::new(codec)
-                            .apply_compression_config(
-                                accept_compression_encodings,
-                                send_compression_encodings,
-                            )
-                            .apply_max_message_size_config(
-                                max_decoding_message_size,
-                                max_encoding_message_size,
-                            );
-                        let res = grpc.unary(method, req).await;
-                        Ok(res)
-                    };
-                    Box::pin(fut)
-                }
-                "/svarog.MpcPeer/SetBizUrl" => {
-                    #[allow(non_camel_case_types)]
-                    struct SetBizUrlSvc<T: MpcPeer>(pub Arc<T>);
-                    impl<T: MpcPeer> tonic::server::UnaryService<super::BizCallbackUrl>
-                    for SetBizUrlSvc<T> {
-                        type Response = super::Void;
-                        type Future = BoxFuture<
-                            tonic::Response<Self::Response>,
-                            tonic::Status,
-                        >;
-                        fn call(
-                            &mut self,
-                            request: tonic::Request<super::BizCallbackUrl>,
-                        ) -> Self::Future {
-                            let inner = Arc::clone(&self.0);
-                            let fut = async move { (*inner).set_biz_url(request).await };
-                            Box::pin(fut)
-                        }
-                    }
-                    let accept_compression_encodings = self.accept_compression_encodings;
-                    let send_compression_encodings = self.send_compression_encodings;
-                    let max_decoding_message_size = self.max_decoding_message_size;
-                    let max_encoding_message_size = self.max_encoding_message_size;
-                    let inner = self.inner.clone();
-                    let fut = async move {
-                        let inner = inner.0;
-                        let method = SetBizUrlSvc(inner);
                         let codec = tonic::codec::ProstCodec::default();
                         let mut grpc = tonic::server::Grpc::new(codec)
                             .apply_compression_config(
@@ -873,10 +857,6 @@ pub mod mpc_session_manager_server {
             &self,
             request: tonic::Request<super::SessionId>,
         ) -> std::result::Result<tonic::Response<super::SessionConfig>, tonic::Status>;
-        async fn get_session_fruit(
-            &self,
-            request: tonic::Request<super::SessionId>,
-        ) -> std::result::Result<tonic::Response<super::SessionFruit>, tonic::Status>;
         async fn blow_whistle(
             &self,
             request: tonic::Request<super::Whistle>,
@@ -1048,52 +1028,6 @@ pub mod mpc_session_manager_server {
                     let fut = async move {
                         let inner = inner.0;
                         let method = GetSessionConfigSvc(inner);
-                        let codec = tonic::codec::ProstCodec::default();
-                        let mut grpc = tonic::server::Grpc::new(codec)
-                            .apply_compression_config(
-                                accept_compression_encodings,
-                                send_compression_encodings,
-                            )
-                            .apply_max_message_size_config(
-                                max_decoding_message_size,
-                                max_encoding_message_size,
-                            );
-                        let res = grpc.unary(method, req).await;
-                        Ok(res)
-                    };
-                    Box::pin(fut)
-                }
-                "/svarog.MpcSessionManager/GetSessionFruit" => {
-                    #[allow(non_camel_case_types)]
-                    struct GetSessionFruitSvc<T: MpcSessionManager>(pub Arc<T>);
-                    impl<
-                        T: MpcSessionManager,
-                    > tonic::server::UnaryService<super::SessionId>
-                    for GetSessionFruitSvc<T> {
-                        type Response = super::SessionFruit;
-                        type Future = BoxFuture<
-                            tonic::Response<Self::Response>,
-                            tonic::Status,
-                        >;
-                        fn call(
-                            &mut self,
-                            request: tonic::Request<super::SessionId>,
-                        ) -> Self::Future {
-                            let inner = Arc::clone(&self.0);
-                            let fut = async move {
-                                (*inner).get_session_fruit(request).await
-                            };
-                            Box::pin(fut)
-                        }
-                    }
-                    let accept_compression_encodings = self.accept_compression_encodings;
-                    let send_compression_encodings = self.send_compression_encodings;
-                    let max_decoding_message_size = self.max_decoding_message_size;
-                    let max_encoding_message_size = self.max_encoding_message_size;
-                    let inner = self.inner.clone();
-                    let fut = async move {
-                        let inner = inner.0;
-                        let method = GetSessionFruitSvc(inner);
                         let codec = tonic::codec::ProstCodec::default();
                         let mut grpc = tonic::server::Grpc::new(codec)
                             .apply_compression_config(

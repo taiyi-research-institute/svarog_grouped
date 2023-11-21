@@ -7,7 +7,6 @@ type MpcSession struct {
 	ReshareKeyQuorum   uint64
 	ExpireBeforeFinish int64
 	ExpireAfterFinish  int64
-	DerivePath         string `gorm:"size:256"`
 	MarshalledTxHashes []byte
 	Result             []byte
 	DataCache          []byte

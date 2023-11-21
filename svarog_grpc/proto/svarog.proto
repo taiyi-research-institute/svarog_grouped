@@ -3,28 +3,24 @@ option go_package = "proto/gen";
 package svarog;
 
 // A peer handles multiple shards of multiple keys.
+// All called by biz
 service MpcPeer {
-    rpc JoinSession(JoinSessionRequest) returns (SessionFruit);
+    rpc JoinSession(JoinSessionRequest) returns (Void);
+    rpc GetSessionFruit(SessionId) returns (SessionFruit);
     
     // When biz detected wrong Tx, call this to abort session.
     rpc AbortSession(AbortSessionRequest) returns (Void);
-
-    // (up) called by biz
-    // (down) called by peer / client
-
-    rpc SetBizUrl(BizCallbackUrl) returns (Void);
 }
 
 service MpcSessionManager {
     // In the request, `session_id`, `group_id`s, `member_id`s
     // are set to "zero-value"s.
     rpc NewSession(SessionConfig) returns (SessionConfig);
-    rpc GetSessionConfig(SessionId) returns (SessionConfig);
-    rpc GetSessionFruit(SessionId) returns (SessionFruit);
-
+    
     // (up) called by biz
     // (down) called by peer
-
+    
+    rpc GetSessionConfig(SessionId) returns (SessionConfig);
     rpc BlowWhistle(Whistle) returns (Void);
     rpc PostMessage(Message) returns (Void);
     rpc GetMessage(Message) returns (Message);
@@ -40,22 +36,17 @@ message SessionConfig {
     int64 expire_before_finish = 6; // When creating session, set to 0
     int64 expire_after_finish = 7; // When creating session, set to 0
 
-    string derive_path = 16; // "" means unset
-    TxHashArray to_sign = 17; // [] means unset
+    ToSign to_sign = 17; // [] means unset
 }
 
 message JoinSessionRequest {
-    string member_name = 1; // Name of MPC participant
-    string key_name = 2; // Name of root private key
+    string session_id = 1;
+    string member_name = 2; // Name of MPC participant
+    string key_name = 3; // Name of root private key
     // `(member_name, key_name)` uniquely identifies a key.
 
-    string token = 3; // Used for authentication
-    string mnemonics = 4; // Only end-user provides this
-    SessionConfig ses_config = 17;
-}
-
-message GetSessionConfigRequest {
-    string ses_id = 2;
+    string token = 4; // Used for authentication
+    string mnemonics = 5; // Only end-user provides this. Leave blank for API calls.
 }
 
 message AbortSessionRequest {
@@ -85,8 +76,13 @@ message Signature {
 
 message Void {}
 
-message TxHashArray {
-    repeated bytes values = 1;
+message TxHash {
+    string derive_path = 1;
+    bytes tx_hash = 2;
+}
+
+message ToSign {
+    repeated TxHash tx_hashes = 1;
 }
 
 message SessionId {

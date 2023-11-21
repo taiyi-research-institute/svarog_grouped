@@ -15,7 +15,7 @@ use curv::{
     elliptic::curves::{secp256_k1::Secp256k1, Point, Scalar},
 };
 use sha2::{Sha256, Sha512};
-use svarog_grpc::protogen::svarog::{SessionConfig, SessionTermination};
+use svarog_grpc::protogen::svarog::SessionConfig;
 use tonic::async_trait;
 use xuanmi_base_support::*;
 use zk_paillier::zkproofs::DLogStatement;
@@ -66,28 +66,28 @@ impl AlgoKeygen for MpcMember {
         let decom_vec: SparseVec<KeyGenDecommitMessage1> =
             self.get_message(MpcPeer::All(), purpose).await.catch_()?;
         let point_inner_vec: SparseVec<Point<Secp256k1>> = {
-            let mut __ = SparseVec::with_capacity(16);
+            let mut point_inner_vec = SparseVec::with_capacity(16);
             for (id, decom) in decom_vec.iter() {
-                __.insert(*id, decom.y_i.0.clone());
+                point_inner_vec.insert(*id, decom.y_i.0.clone());
             }
-            __
+            point_inner_vec
         };
         let point_outer_vec: SparseVec<Point<Secp256k1>> = {
-            let mut __ = SparseVec::with_capacity(16);
+            let mut point_outer_vec = SparseVec::with_capacity(16);
             for (id, decom) in decom_vec.iter() {
-                __.insert(*id, decom.y_i.1.clone());
+                point_outer_vec.insert(*id, decom.y_i.1.clone());
             }
-            __
+            point_outer_vec
         };
         let enc_keys = {
-            let mut __ = SparseVec::with_capacity(16);
+            let mut enc_keys = SparseVec::with_capacity(16);
             for (id, decom) in decom_vec.iter() {
                 let enc_key =
                     (&decom.y_i.0 + &decom.y_i.1) * (&party_keys.u_i.0 + &party_keys.u_i.1);
                 let enc_key = enc_key.x_coord().unwrap();
-                __.insert(*id, enc_key);
+                enc_keys.insert(*id, enc_key);
             }
-            __
+            enc_keys
         };
 
         let decom_vec = decom_vec.values_sorted_by_key_asc();
@@ -126,26 +126,26 @@ impl AlgoKeygen for MpcMember {
         );
 
         let dlog_stmt_vec: SparseVec<DLogStatement> = {
-            let mut __ = SparseVec::with_capacity(16);
+            let mut dlog_stmt_vec = SparseVec::with_capacity(16);
             for (id, pubsetup) in rgpsetup_ans_vec.iter() {
                 let v = DLogStatement {
                     g: pubsetup.h1.clone(),
                     ni: pubsetup.h2.clone(),
                     N: pubsetup.N_tilde.clone(),
                 };
-                __.insert(*id, v);
+                dlog_stmt_vec.insert(*id, v);
             }
-            __
+            dlog_stmt_vec
         };
 
         purpose = "exchange paillier proof";
         let plkey_pf_send_vec: SparseVec<PaillierKeyProofs> = {
-            let mut __ = SparseVec::with_capacity(16);
+            let mut plkey_pf_send_vec = SparseVec::with_capacity(16);
             for (id, _pubsetup) in rgpsetup_ans_vec.iter() {
                 let v = party_keys.phase3_proof_of_correct_key(&dlog_stmt_vec[id], &enc_keys[id]);
-                __.insert(*id, v);
+                plkey_pf_send_vec.insert(*id, v);
             }
-            __
+            plkey_pf_send_vec
         };
         for (id, plpf) in plkey_pf_send_vec.iter() {
             self.post_message(MpcPeer::Member(*id), purpose, plpf)
@@ -305,11 +305,11 @@ impl AlgoKeygen for MpcMember {
             vss_schemes_inner: vss_inner_vec.clone(),
             vss_schemes_outer: vss_outer_vec.clone(),
             paillier_keys: {
-                let mut __ = SparseVec::with_capacity(16);
+                let mut paillier_keys = SparseVec::with_capacity(16);
                 for (id, com) in com_vec.iter() {
-                    __.insert(*id, com.e.clone());
+                    paillier_keys.insert(*id, com.e.clone());
                 }
-                __
+                paillier_keys
             },
             key_arch: KeyArch::from(self.attr_session_config()),
             member_id: my_id,

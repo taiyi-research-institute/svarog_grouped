@@ -92,11 +92,10 @@ pub fn get_rho_vec(n: &BigInt) -> Vec<BigInt> {
 pub fn gen_proof(dk: &DecryptionKey) -> Vec<BigInt> {
     let n = dk.q.borrow() * dk.p.borrow();
 
-    let result = get_rho_vec(&n)
+    get_rho_vec(&n)
         .into_iter()
         .map(|rho| extract_nroot(&dk, &rho))
-        .collect();
-    result
+        .collect()
 }
 
 /// Verifies non-interactive proof of correctness of public Paillier key.
