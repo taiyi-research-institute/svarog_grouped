@@ -90,6 +90,8 @@ pub struct Signature {
     pub s: ::prost::alloc::vec::Vec<u8>,
     #[prost(bool, tag = "3")]
     pub v: bool,
+    #[prost(string, tag = "4")]
+    pub derive_path: ::prost::alloc::string::String,
 }
 #[derive(serde::Serialize, serde::Deserialize)]
 #[allow(clippy::derive_partial_eq_without_eq)]

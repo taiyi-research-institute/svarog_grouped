@@ -72,6 +72,7 @@ message Signature {
     bytes r = 1;
     bytes s = 2;
     bool  v = 3;
+    string derive_path = 4;
 }
 
 message Signatures {
