@@ -4,7 +4,7 @@ package svarog;
 
 // A peer handles multiple shards of multiple keys.
 service MpcPeer {
-    rpc JoinSession(JoinSessionRequest) returns (SessionResult);
+    rpc JoinSession(JoinSessionRequest) returns (SessionFruit);
     
     // When biz detected wrong Tx, call this to abort session.
     rpc AbortSession(AbortSessionRequest) returns (Void);
@@ -20,7 +20,7 @@ service MpcSessionManager {
     // are set to "zero-value"s.
     rpc NewSession(SessionConfig) returns (SessionConfig);
     rpc GetSessionConfig(SessionId) returns (SessionConfig);
-    rpc GetSessionResult(SessionId) returns (SessionResult);
+    rpc GetSessionFruit(SessionId) returns (SessionFruit);
 
     // (up) called by biz
     // (down) called by peer
@@ -106,18 +106,17 @@ message Message {
     bytes body = 5; // if set to [], remaining fields are used as index.
 }
 
-message SessionResult {
+message SessionFruit {
     oneof value {
-        Void not_ready = 1;
-        string root_xpub = 2; // keygen or reshare result
-        Signature signature = 3; // sign result
+        string root_xpub = 1; // keygen or reshare result
+        Signature signature = 2; // sign result
     }
 }
 
 message SessionTermination {
     string session_id = 1;
     uint64 member_id = 2; // member_id
-    SessionResult result = 3;
+    SessionFruit fruit = 3;
 }
 
 message BizCallbackUrl {

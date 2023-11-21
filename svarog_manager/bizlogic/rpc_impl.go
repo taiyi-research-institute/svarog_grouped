@@ -210,7 +210,7 @@ func (srv *SessionManager) TerminateSession(
 	marshalled := make([]byte, 0)
 	{ // If the session doesn't have a Termination hash, update it;
 		if len(session.TerminationHash) == 0 {
-			marshalled, err = proto.Marshal(req.Result)
+			marshalled, err = proto.Marshal(req.Fruit)
 			if err != nil {
 				tr.Rollback()
 				srv.Error(err)
@@ -224,7 +224,7 @@ func (srv *SessionManager) TerminateSession(
 				return nil, err
 			}
 		} else { //// otherwise, check if it matches.
-			marshalled, err = proto.Marshal(req.Result)
+			marshalled, err = proto.Marshal(req.Fruit)
 			if err != nil {
 				tr.Rollback()
 				srv.Error(err)
@@ -380,6 +380,56 @@ func (srv *SessionManager) GetSessionConfig(
 		resp.ExpireAfterFinish = session.ExpireAfterFinish
 		resp.DerivePath = session.DerivePath
 		err = proto.Unmarshal(session.Result, resp.ToSign)
+		if err != nil {
+			tr.Rollback()
+			srv.Error(err)
+			return nil, err
+		}
+	}
+
+	err = tr.Commit().Error
+	if err != nil {
+		tr.Rollback()
+		srv.Error(err)
+		return nil, err
+	}
+	return resp, nil
+}
+
+func (srv *SessionManager) GetSessionFruit(
+	ctx context.Context,
+	req *pb.SessionId,
+) (resp *pb.SessionFruit, err error) {
+	tr := srv.db.Begin()
+	resp = &pb.SessionFruit{}
+
+	// If a whistle is blown, return with error.
+	var session *MpcSession
+	{ // get session from db
+		err = tr.Where("session_id = ?", req.SessionId).First(&session).Error
+		if err != nil {
+			tr.Rollback()
+			srv.Error(err)
+			return nil, err
+		}
+		if session == nil {
+			tr.Rollback()
+			srv.Debugw("Session does not exist", "SessionId", req.SessionId)
+			return nil, errors.New("Session does not exist")
+		}
+		// If a whistle is blown, return with error.
+		if session.Whistle != "" {
+			tr.Rollback()
+			srv.Debugw("Session is dangerous", "SessionId", req.SessionId)
+			return nil, errors.New(session.Whistle)
+		}
+	}
+
+	if len(session.Result) == 0 {
+		resp.Value = nil
+	} else {
+		fruit := &pb.SessionFruit{}
+		err = proto.Unmarshal(session.Result, fruit)
 		if err != nil {
 			tr.Rollback()
 			srv.Error(err)

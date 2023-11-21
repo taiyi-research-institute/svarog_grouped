@@ -1,3 +1,4 @@
+#[derive(serde::Serialize, serde::Deserialize)]
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct SessionConfig {
@@ -26,6 +27,7 @@ pub struct SessionConfig {
     #[prost(message, optional, tag = "17")]
     pub to_sign: ::core::option::Option<TxHashArray>,
 }
+#[derive(serde::Serialize, serde::Deserialize)]
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct JoinSessionRequest {
@@ -44,12 +46,14 @@ pub struct JoinSessionRequest {
     #[prost(message, optional, tag = "17")]
     pub ses_config: ::core::option::Option<SessionConfig>,
 }
+#[derive(serde::Serialize, serde::Deserialize)]
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct GetSessionConfigRequest {
     #[prost(string, tag = "2")]
     pub ses_id: ::prost::alloc::string::String,
 }
+#[derive(serde::Serialize, serde::Deserialize)]
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct AbortSessionRequest {
@@ -58,6 +62,7 @@ pub struct AbortSessionRequest {
     #[prost(string, tag = "2")]
     pub reason: ::prost::alloc::string::String,
 }
+#[derive(serde::Serialize, serde::Deserialize)]
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct Group {
@@ -73,6 +78,7 @@ pub struct Group {
     #[prost(message, repeated, tag = "5")]
     pub members: ::prost::alloc::vec::Vec<Member>,
 }
+#[derive(serde::Serialize, serde::Deserialize)]
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct Member {
@@ -84,6 +90,7 @@ pub struct Member {
     #[prost(bool, tag = "3")]
     pub is_attending: bool,
 }
+#[derive(serde::Serialize, serde::Deserialize)]
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct Signature {
@@ -94,21 +101,25 @@ pub struct Signature {
     #[prost(bool, tag = "3")]
     pub v: bool,
 }
+#[derive(serde::Serialize, serde::Deserialize)]
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct Void {}
+#[derive(serde::Serialize, serde::Deserialize)]
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct TxHashArray {
     #[prost(bytes = "vec", repeated, tag = "1")]
     pub values: ::prost::alloc::vec::Vec<::prost::alloc::vec::Vec<u8>>,
 }
+#[derive(serde::Serialize, serde::Deserialize)]
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct SessionId {
     #[prost(string, tag = "1")]
     pub session_id: ::prost::alloc::string::String,
 }
+#[derive(serde::Serialize, serde::Deserialize)]
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct Whistle {
@@ -117,6 +128,7 @@ pub struct Whistle {
     #[prost(string, tag = "2")]
     pub message: ::prost::alloc::string::String,
 }
+#[derive(serde::Serialize, serde::Deserialize)]
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct Message {
@@ -133,27 +145,28 @@ pub struct Message {
     #[prost(bytes = "vec", tag = "5")]
     pub body: ::prost::alloc::vec::Vec<u8>,
 }
+#[derive(serde::Serialize, serde::Deserialize)]
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
-pub struct SessionResult {
-    #[prost(oneof = "session_result::Value", tags = "1, 2, 3")]
-    pub value: ::core::option::Option<session_result::Value>,
+pub struct SessionFruit {
+    #[prost(oneof = "session_fruit::Value", tags = "1, 2")]
+    pub value: ::core::option::Option<session_fruit::Value>,
 }
-/// Nested message and enum types in `SessionResult`.
-pub mod session_result {
+/// Nested message and enum types in `SessionFruit`.
+pub mod session_fruit {
+    #[derive(serde::Serialize, serde::Deserialize)]
     #[allow(clippy::derive_partial_eq_without_eq)]
     #[derive(Clone, PartialEq, ::prost::Oneof)]
     pub enum Value {
-        #[prost(message, tag = "1")]
-        NotReady(super::Void),
         /// keygen or reshare result
-        #[prost(string, tag = "2")]
+        #[prost(string, tag = "1")]
         RootXpub(::prost::alloc::string::String),
         /// sign result
-        #[prost(message, tag = "3")]
+        #[prost(message, tag = "2")]
         Signature(super::Signature),
     }
 }
+#[derive(serde::Serialize, serde::Deserialize)]
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct SessionTermination {
@@ -163,8 +176,9 @@ pub struct SessionTermination {
     #[prost(uint64, tag = "2")]
     pub member_id: u64,
     #[prost(message, optional, tag = "3")]
-    pub result: ::core::option::Option<SessionResult>,
+    pub fruit: ::core::option::Option<SessionFruit>,
 }
+#[derive(serde::Serialize, serde::Deserialize)]
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct BizCallbackUrl {
@@ -260,7 +274,7 @@ pub mod mpc_peer_client {
         pub async fn join_session(
             &mut self,
             request: impl tonic::IntoRequest<super::JoinSessionRequest>,
-        ) -> std::result::Result<tonic::Response<super::SessionResult>, tonic::Status> {
+        ) -> std::result::Result<tonic::Response<super::SessionFruit>, tonic::Status> {
             self.inner
                 .ready()
                 .await
@@ -454,10 +468,10 @@ pub mod mpc_session_manager_client {
                 .insert(GrpcMethod::new("svarog.MpcSessionManager", "GetSessionConfig"));
             self.inner.unary(req, path, codec).await
         }
-        pub async fn get_session_result(
+        pub async fn get_session_fruit(
             &mut self,
             request: impl tonic::IntoRequest<super::SessionId>,
-        ) -> std::result::Result<tonic::Response<super::SessionResult>, tonic::Status> {
+        ) -> std::result::Result<tonic::Response<super::SessionFruit>, tonic::Status> {
             self.inner
                 .ready()
                 .await
@@ -469,11 +483,11 @@ pub mod mpc_session_manager_client {
                 })?;
             let codec = tonic::codec::ProstCodec::default();
             let path = http::uri::PathAndQuery::from_static(
-                "/svarog.MpcSessionManager/GetSessionResult",
+                "/svarog.MpcSessionManager/GetSessionFruit",
             );
             let mut req = request.into_request();
             req.extensions_mut()
-                .insert(GrpcMethod::new("svarog.MpcSessionManager", "GetSessionResult"));
+                .insert(GrpcMethod::new("svarog.MpcSessionManager", "GetSessionFruit"));
             self.inner.unary(req, path, codec).await
         }
         pub async fn blow_whistle(
@@ -576,7 +590,7 @@ pub mod mpc_peer_server {
         async fn join_session(
             &self,
             request: tonic::Request<super::JoinSessionRequest>,
-        ) -> std::result::Result<tonic::Response<super::SessionResult>, tonic::Status>;
+        ) -> std::result::Result<tonic::Response<super::SessionFruit>, tonic::Status>;
         /// When biz detected wrong Tx, call this to abort session.
         async fn abort_session(
             &self,
@@ -674,7 +688,7 @@ pub mod mpc_peer_server {
                         T: MpcPeer,
                     > tonic::server::UnaryService<super::JoinSessionRequest>
                     for JoinSessionSvc<T> {
-                        type Response = super::SessionResult;
+                        type Response = super::SessionFruit;
                         type Future = BoxFuture<
                             tonic::Response<Self::Response>,
                             tonic::Status,
@@ -859,10 +873,10 @@ pub mod mpc_session_manager_server {
             &self,
             request: tonic::Request<super::SessionId>,
         ) -> std::result::Result<tonic::Response<super::SessionConfig>, tonic::Status>;
-        async fn get_session_result(
+        async fn get_session_fruit(
             &self,
             request: tonic::Request<super::SessionId>,
-        ) -> std::result::Result<tonic::Response<super::SessionResult>, tonic::Status>;
+        ) -> std::result::Result<tonic::Response<super::SessionFruit>, tonic::Status>;
         async fn blow_whistle(
             &self,
             request: tonic::Request<super::Whistle>,
@@ -1049,14 +1063,14 @@ pub mod mpc_session_manager_server {
                     };
                     Box::pin(fut)
                 }
-                "/svarog.MpcSessionManager/GetSessionResult" => {
+                "/svarog.MpcSessionManager/GetSessionFruit" => {
                     #[allow(non_camel_case_types)]
-                    struct GetSessionResultSvc<T: MpcSessionManager>(pub Arc<T>);
+                    struct GetSessionFruitSvc<T: MpcSessionManager>(pub Arc<T>);
                     impl<
                         T: MpcSessionManager,
                     > tonic::server::UnaryService<super::SessionId>
-                    for GetSessionResultSvc<T> {
-                        type Response = super::SessionResult;
+                    for GetSessionFruitSvc<T> {
+                        type Response = super::SessionFruit;
                         type Future = BoxFuture<
                             tonic::Response<Self::Response>,
                             tonic::Status,
@@ -1067,7 +1081,7 @@ pub mod mpc_session_manager_server {
                         ) -> Self::Future {
                             let inner = Arc::clone(&self.0);
                             let fut = async move {
-                                (*inner).get_session_result(request).await
+                                (*inner).get_session_fruit(request).await
                             };
                             Box::pin(fut)
                         }
@@ -1079,7 +1093,7 @@ pub mod mpc_session_manager_server {
                     let inner = self.inner.clone();
                     let fut = async move {
                         let inner = inner.0;
-                        let method = GetSessionResultSvc(inner);
+                        let method = GetSessionFruitSvc(inner);
                         let codec = tonic::codec::ProstCodec::default();
                         let mut grpc = tonic::server::Grpc::new(codec)
                             .apply_compression_config(

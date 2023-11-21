@@ -7,3 +7,4 @@ edition = "2021"
 prost = "0.11.9"
 prost-types = "0.11.9"
 tonic = { version = "0.9", features = ["gzip", "channel"] }
+serde = "1"

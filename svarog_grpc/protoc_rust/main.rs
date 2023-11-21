@@ -31,6 +31,7 @@ fn main() -> Outcome<()> {
         fs::create_dir_all(&rust_dir).catch_()?;
         tonic_build::configure()
             .out_dir(&rust_dir)
+            .type_attribute(".", "#[derive(serde::Serialize, serde::Deserialize)]")
             .compile(&protos, &[&proto_dir])
             .catch_()?;
     }

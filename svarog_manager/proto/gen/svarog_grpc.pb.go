@@ -28,7 +28,7 @@ const (
 //
 // For semantics around ctx use and closing/ending streaming RPCs, please refer to https://pkg.go.dev/google.golang.org/grpc/?tab=doc#ClientConn.NewStream.
 type MpcPeerClient interface {
-	JoinSession(ctx context.Context, in *JoinSessionRequest, opts ...grpc.CallOption) (*SessionResult, error)
+	JoinSession(ctx context.Context, in *JoinSessionRequest, opts ...grpc.CallOption) (*SessionFruit, error)
 	// When biz detected wrong Tx, call this to abort session.
 	AbortSession(ctx context.Context, in *AbortSessionRequest, opts ...grpc.CallOption) (*Void, error)
 	SetBizUrl(ctx context.Context, in *BizCallbackUrl, opts ...grpc.CallOption) (*Void, error)
@@ -42,8 +42,8 @@ func NewMpcPeerClient(cc grpc.ClientConnInterface) MpcPeerClient {
 	return &mpcPeerClient{cc}
 }
 
-func (c *mpcPeerClient) JoinSession(ctx context.Context, in *JoinSessionRequest, opts ...grpc.CallOption) (*SessionResult, error) {
-	out := new(SessionResult)
+func (c *mpcPeerClient) JoinSession(ctx context.Context, in *JoinSessionRequest, opts ...grpc.CallOption) (*SessionFruit, error) {
+	out := new(SessionFruit)
 	err := c.cc.Invoke(ctx, MpcPeer_JoinSession_FullMethodName, in, out, opts...)
 	if err != nil {
 		return nil, err
@@ -73,7 +73,7 @@ func (c *mpcPeerClient) SetBizUrl(ctx context.Context, in *BizCallbackUrl, opts 
 // All implementations must embed UnimplementedMpcPeerServer
 // for forward compatibility
 type MpcPeerServer interface {
-	JoinSession(context.Context, *JoinSessionRequest) (*SessionResult, error)
+	JoinSession(context.Context, *JoinSessionRequest) (*SessionFruit, error)
 	// When biz detected wrong Tx, call this to abort session.
 	AbortSession(context.Context, *AbortSessionRequest) (*Void, error)
 	SetBizUrl(context.Context, *BizCallbackUrl) (*Void, error)
@@ -84,7 +84,7 @@ type MpcPeerServer interface {
 type UnimplementedMpcPeerServer struct {
 }
 
-func (UnimplementedMpcPeerServer) JoinSession(context.Context, *JoinSessionRequest) (*SessionResult, error) {
+func (UnimplementedMpcPeerServer) JoinSession(context.Context, *JoinSessionRequest) (*SessionFruit, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method JoinSession not implemented")
 }
 func (UnimplementedMpcPeerServer) AbortSession(context.Context, *AbortSessionRequest) (*Void, error) {
@@ -187,7 +187,7 @@ var MpcPeer_ServiceDesc = grpc.ServiceDesc{
 const (
 	MpcSessionManager_NewSession_FullMethodName       = "/svarog.MpcSessionManager/NewSession"
 	MpcSessionManager_GetSessionConfig_FullMethodName = "/svarog.MpcSessionManager/GetSessionConfig"
-	MpcSessionManager_GetSessionResult_FullMethodName = "/svarog.MpcSessionManager/GetSessionResult"
+	MpcSessionManager_GetSessionFruit_FullMethodName  = "/svarog.MpcSessionManager/GetSessionFruit"
 	MpcSessionManager_BlowWhistle_FullMethodName      = "/svarog.MpcSessionManager/BlowWhistle"
 	MpcSessionManager_PostMessage_FullMethodName      = "/svarog.MpcSessionManager/PostMessage"
 	MpcSessionManager_GetMessage_FullMethodName       = "/svarog.MpcSessionManager/GetMessage"
@@ -202,7 +202,7 @@ type MpcSessionManagerClient interface {
 	// are set to "zero-value"s.
 	NewSession(ctx context.Context, in *SessionConfig, opts ...grpc.CallOption) (*SessionConfig, error)
 	GetSessionConfig(ctx context.Context, in *SessionId, opts ...grpc.CallOption) (*SessionConfig, error)
-	GetSessionResult(ctx context.Context, in *SessionId, opts ...grpc.CallOption) (*SessionResult, error)
+	GetSessionFruit(ctx context.Context, in *SessionId, opts ...grpc.CallOption) (*SessionFruit, error)
 	BlowWhistle(ctx context.Context, in *Whistle, opts ...grpc.CallOption) (*Void, error)
 	PostMessage(ctx context.Context, in *Message, opts ...grpc.CallOption) (*Void, error)
 	GetMessage(ctx context.Context, in *Message, opts ...grpc.CallOption) (*Message, error)
@@ -235,9 +235,9 @@ func (c *mpcSessionManagerClient) GetSessionConfig(ctx context.Context, in *Sess
 	return out, nil
 }
 
-func (c *mpcSessionManagerClient) GetSessionResult(ctx context.Context, in *SessionId, opts ...grpc.CallOption) (*SessionResult, error) {
-	out := new(SessionResult)
-	err := c.cc.Invoke(ctx, MpcSessionManager_GetSessionResult_FullMethodName, in, out, opts...)
+func (c *mpcSessionManagerClient) GetSessionFruit(ctx context.Context, in *SessionId, opts ...grpc.CallOption) (*SessionFruit, error) {
+	out := new(SessionFruit)
+	err := c.cc.Invoke(ctx, MpcSessionManager_GetSessionFruit_FullMethodName, in, out, opts...)
 	if err != nil {
 		return nil, err
 	}
@@ -288,7 +288,7 @@ type MpcSessionManagerServer interface {
 	// are set to "zero-value"s.
 	NewSession(context.Context, *SessionConfig) (*SessionConfig, error)
 	GetSessionConfig(context.Context, *SessionId) (*SessionConfig, error)
-	GetSessionResult(context.Context, *SessionId) (*SessionResult, error)
+	GetSessionFruit(context.Context, *SessionId) (*SessionFruit, error)
 	BlowWhistle(context.Context, *Whistle) (*Void, error)
 	PostMessage(context.Context, *Message) (*Void, error)
 	GetMessage(context.Context, *Message) (*Message, error)
@@ -306,8 +306,8 @@ func (UnimplementedMpcSessionManagerServer) NewSession(context.Context, *Session
 func (UnimplementedMpcSessionManagerServer) GetSessionConfig(context.Context, *SessionId) (*SessionConfig, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method GetSessionConfig not implemented")
 }
-func (UnimplementedMpcSessionManagerServer) GetSessionResult(context.Context, *SessionId) (*SessionResult, error) {
-	return nil, status.Errorf(codes.Unimplemented, "method GetSessionResult not implemented")
+func (UnimplementedMpcSessionManagerServer) GetSessionFruit(context.Context, *SessionId) (*SessionFruit, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method GetSessionFruit not implemented")
 }
 func (UnimplementedMpcSessionManagerServer) BlowWhistle(context.Context, *Whistle) (*Void, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method BlowWhistle not implemented")
@@ -370,20 +370,20 @@ func _MpcSessionManager_GetSessionConfig_Handler(srv interface{}, ctx context.Co
 	return interceptor(ctx, in, info, handler)
 }
 
-func _MpcSessionManager_GetSessionResult_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+func _MpcSessionManager_GetSessionFruit_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
 	in := new(SessionId)
 	if err := dec(in); err != nil {
 		return nil, err
 	}
 	if interceptor == nil {
-		return srv.(MpcSessionManagerServer).GetSessionResult(ctx, in)
+		return srv.(MpcSessionManagerServer).GetSessionFruit(ctx, in)
 	}
 	info := &grpc.UnaryServerInfo{
 		Server:     srv,
-		FullMethod: MpcSessionManager_GetSessionResult_FullMethodName,
+		FullMethod: MpcSessionManager_GetSessionFruit_FullMethodName,
 	}
 	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
-		return srv.(MpcSessionManagerServer).GetSessionResult(ctx, req.(*SessionId))
+		return srv.(MpcSessionManagerServer).GetSessionFruit(ctx, req.(*SessionId))
 	}
 	return interceptor(ctx, in, info, handler)
 }
@@ -476,8 +476,8 @@ var MpcSessionManager_ServiceDesc = grpc.ServiceDesc{
 			Handler:    _MpcSessionManager_GetSessionConfig_Handler,
 		},
 		{
-			MethodName: "GetSessionResult",
-			Handler:    _MpcSessionManager_GetSessionResult_Handler,
+			MethodName: "GetSessionFruit",
+			Handler:    _MpcSessionManager_GetSessionFruit_Handler,
 		},
 		{
 			MethodName: "BlowWhistle",
