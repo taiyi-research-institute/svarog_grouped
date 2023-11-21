@@ -74,6 +74,10 @@ message Signature {
     bool  v = 3;
 }
 
+message Signatures {
+    repeated Signature signatures = 1;
+}
+
 message Void {}
 
 message TxHash {
@@ -105,7 +109,7 @@ message Message {
 message SessionFruit {
     oneof value {
         string root_xpub = 1; // keygen or reshare result
-        Signature signature = 2; // sign result
+        Signatures signatures = 2; // sign result
     }
 }
 
