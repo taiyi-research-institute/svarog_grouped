@@ -1,6 +1,7 @@
 use crate::util::*;
 use miniz_oxide::{deflate::compress_to_vec, inflate::decompress_to_vec};
 use serde::{de::DeserializeOwned, Serialize};
+use svarog_grpc::protogen::svarog::TxHash;
 use std::collections::{HashMap, HashSet};
 use std::time::{SystemTime, UNIX_EPOCH};
 use svarog_grpc::protogen::svarog::{
@@ -24,8 +25,7 @@ pub struct MpcMember {
     member_id: usize,
     group_id: usize,
 
-    derive_path: String,
-    tx_vec: Vec<Vec<u8>>,
+    to_sign: Vec<TxHash>,
     session_id: String,
     expire_at: i64,
     grpc_hostport: String,
@@ -53,8 +53,7 @@ impl MpcMember {
             reshare_members: HashSet::new(),
             member_id: 0,
             group_id: 0,
-            derive_path: "".to_string(),
-            tx_vec: Vec::new(),
+            to_sign: Vec::new(),
             session_id: "".to_string(),
             expire_at: 0,
             grpc_hostport: grpc_hostport.to_owned(),
@@ -115,9 +114,8 @@ impl MpcMember {
             }
         }
         assert_throw!(self.member_id != 0, "Member not found in session config");
-        self.derive_path = ses_config.derive_path.clone();
-        if let Some(tx_vec) = &ses_config.to_sign {
-            self.tx_vec = tx_vec.values.clone();
+        if let Some(to_sign) = &ses_config.to_sign {
+            self.to_sign = to_sign.tx_hashes.clone();
         }
         self.session_id = ses_config.session_id.clone();
         self.expire_at = ses_config.expire_before_finish;

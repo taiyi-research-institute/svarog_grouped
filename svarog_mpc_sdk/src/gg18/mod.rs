@@ -22,6 +22,8 @@
 
 mod keygen;
 pub use keygen::*;
+mod keygen_mnem;
+pub use keygen_mnem::*;
 mod aes;
 pub use aes::*;
 
