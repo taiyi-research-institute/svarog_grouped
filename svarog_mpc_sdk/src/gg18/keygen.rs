@@ -2,6 +2,8 @@
 //! https://github.com/ZenGo-X/multi-party-ecdsa/blob/master/examples/gg18_keygen_client.rs
 //!
 
+use std::ops::Deref;
+
 use bip32::ChainCode; // chain_code = left half of SHA512(pk)
 use bip32::{ChildNumber, ExtendedKey, ExtendedKeyAttrs, Prefix};
 use bip39::{Language, Mnemonic};
@@ -12,8 +14,8 @@ use curv::{
     },
     elliptic::curves::{secp256_k1::Secp256k1, Point, Scalar},
 };
-use sha2::Sha256;
-use svarog_grpc::protogen::svarog::SessionConfig;
+use sha2::{Sha256, Sha512};
+use svarog_grpc::protogen::svarog::{SessionConfig, SessionTermination};
 use tonic::async_trait;
 use xuanmi_base_support::*;
 use zk_paillier::zkproofs::DLogStatement;
@@ -24,12 +26,12 @@ use crate::{mta::range_proofs::*, util::*};
 
 #[async_trait]
 pub trait AlgoKeygen {
-    async fn algo_keygen(&mut self) -> Outcome<()>;
+    async fn algo_keygen(&mut self) -> Outcome<KeyStore>;
 }
 
 #[async_trait]
 impl AlgoKeygen for MpcMember {
-    async fn algo_keygen(&mut self) -> Outcome<()> {
+    async fn algo_keygen(&mut self) -> Outcome<KeyStore> {
         let config = Parameters {
             threshold: (self.attr_key_quorum() - 1) as u16,
             share_count: self.attr_n_registered() as u16,
@@ -288,10 +290,37 @@ impl AlgoKeygen for MpcMember {
         )
         .catch("DlogProofFailed", "Bad dlog proof of `x_i` in `Phase3`")?;
 
-        // TODO: compose keystore
-        // TODO: terminate
-        // TODO: return keystore
-        Ok(())
+        let keystore = KeyStore {
+            party_keys,
+            shared_keys,
+            chain_code: {
+                let pk_long = y_sum.to_bytes(false);
+                let chain_code: ChainCode = Sha512::digest(&pk_long)
+                    .get(..32)
+                    .ifnone_()?
+                    .try_into()
+                    .unwrap();
+                chain_code
+            },
+            vss_schemes_inner: vss_inner_vec.clone(),
+            vss_schemes_outer: vss_outer_vec.clone(),
+            paillier_keys: {
+                let mut __ = SparseVec::with_capacity(16);
+                for (id, com) in com_vec.iter() {
+                    __.insert(*id, com.e.clone());
+                }
+                __
+            },
+            key_arch: KeyArch::from(self.attr_session_config()),
+            member_id: my_id,
+        };
+
+        let root_xpub = keystore.attr_root_xpub().catch_()?;
+        self.terminate_session(SessionFruitValue::RootXpub(root_xpub))
+            .await
+            .catch_()?;
+
+        Ok(keystore)
     }
 }
 
@@ -300,49 +329,58 @@ pub struct KeyStore {
     pub party_keys: Keys,
     pub shared_keys: SharedKeys,
     pub chain_code: [u8; 32],
-    pub vss_schemes: SparseVec<VerifiableSS<Secp256k1>>,
+    pub vss_schemes_inner: SparseVec<VerifiableSS<Secp256k1>>,
+    pub vss_schemes_outer: SparseVec<VerifiableSS<Secp256k1>>,
     pub paillier_keys: SparseVec<EncryptionKey>,
 
     pub key_arch: KeyArch,
-    pub registered_member_id: usize,
+    pub member_id: usize,
+}
+
+impl KeyStore {
+    pub fn marshall(&self) -> Outcome<Vec<u8>> {
+        let deflated = self.compress().catch_()?;
+        Ok(deflated)
+    }
+
+    pub fn unmarshall(deflated: &[u8]) -> Outcome<Self> {
+        let obj: Self = deflated.decompress().catch_()?;
+        Ok(obj)
+    }
+
+    pub fn attr_root_xpub(&self) -> Outcome<String> {
+        let pk_short = self.attr_root_pk(true);
+        assert_throw!(pk_short.len() == 33, "Invalid pubkey length");
+        let ex_pk = ExtendedKey {
+            prefix: Prefix::XPUB,
+            attrs: ExtendedKeyAttrs {
+                depth: 0u8,
+                parent_fingerprint: [0u8; 4],
+                child_number: ChildNumber(0u32),
+                chain_code: self.chain_code.clone(),
+            },
+            key_bytes: pk_short.try_into().unwrap(),
+        };
+        Ok(ex_pk.to_string())
+    }
+
+    pub fn attr_root_pk(&self, compress: bool) -> Vec<u8> {
+        let point = &self.shared_keys.y;
+        let pk = point.to_bytes(compress).deref().to_vec();
+        pk
+    }
 }
 
 #[derive(Clone, Serialize, Deserialize)]
 pub struct KeyArch {
     pub key_quorum: usize,
-    pub groups: SparseVec<GroupArch>,
-}
-
-#[derive(Clone, Serialize, Deserialize)]
-pub struct GroupArch {
-    pub group_quorum: usize,
-    pub group_name: String,
-    pub group_members: SparseVec<String>,
-    pub is_reshare: bool,
+    pub groups: Vec<svarog_grpc::protogen::svarog::Group>,
 }
 
 impl From<&SessionConfig> for KeyArch {
     fn from(config: &SessionConfig) -> Self {
-        let mut groups = SparseVec::new();
-        for group in config.groups.iter() {
-            let group_members: SparseVec<String> = {
-                let mut __ = SparseVec::with_capacity(16);
-                for member in group.members.iter() {
-                    __.insert(member.member_id as usize, member.member_name.clone());
-                }
-                __
-            };
-            let group_arch = GroupArch {
-                group_quorum: group.group_quorum as usize,
-                group_name: group.group_name.clone(),
-                group_members,
-                is_reshare: group.is_reshare,
-            };
-            groups.insert(group.group_id as usize, group_arch);
-        }
-        Self {
-            key_quorum: config.key_quorum as usize,
-            groups,
-        }
+        let key_quorum = config.key_quorum as usize;
+        let groups = config.groups.clone();
+        Self { key_quorum, groups }
     }
 }

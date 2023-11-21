@@ -7,6 +7,7 @@ use svarog_grpc::protogen::svarog::{
     mpc_session_manager_client::MpcSessionManagerClient, Message, SessionConfig, SessionId,
     SessionTermination,
 };
+pub use svarog_grpc::protogen::svarog::{session_fruit::Value as SessionFruitValue, SessionFruit};
 use xuanmi_base_support::*;
 
 #[derive(Clone)]
@@ -28,6 +29,8 @@ pub struct MpcMember {
     session_id: String,
     expire_at: i64,
     grpc_hostport: String,
+
+    ses_conf: SessionConfig,
 }
 
 pub enum MpcPeer {
@@ -55,6 +58,7 @@ impl MpcMember {
             session_id: "".to_string(),
             expire_at: 0,
             grpc_hostport: grpc_hostport.to_owned(),
+            ses_conf: SessionConfig::default(),
         })
     }
 
@@ -117,6 +121,7 @@ impl MpcMember {
         }
         self.session_id = ses_config.session_id.clone();
         self.expire_at = ses_config.expire_before_finish;
+        self.ses_conf = ses_config.clone();
         Ok(())
     }
 
@@ -129,12 +134,17 @@ impl MpcMember {
         Ok(())
     }
 
-    pub async fn terminate_session(&self, request: SessionTermination) -> Outcome<()> {
+    pub async fn terminate_session(&self, value: SessionFruitValue) -> Outcome<()> {
         let mut grpc_client = MpcSessionManagerClient::connect(self.grpc_hostport.to_owned())
             .await
             .catch_()?;
         self.assert_on_time().catch_()?;
-        grpc_client.terminate_session(request).await.catch_()?;
+        let req = SessionTermination {
+            session_id: self.session_id.clone(),
+            member_id: self.member_id as u64,
+            fruit: Some(SessionFruit { value: Some(value) }),
+        };
+        grpc_client.terminate_session(req).await.catch_()?;
         Ok(())
     }
 
@@ -292,13 +302,17 @@ impl MpcMember {
     pub fn attr_all_registered_members(&self) -> &SparseVec<usize> {
         &self.member_group
     }
+
+    pub fn attr_session_config(&self) -> &SessionConfig {
+        &self.ses_conf
+    }
 }
 
 pub trait CompressAble {
     fn compress(&self) -> Outcome<Vec<u8>>;
 }
 
-trait DecompressAble<T> {
+pub trait DecompressAble<T> {
     fn decompress(&self) -> Outcome<T>;
 }
 
