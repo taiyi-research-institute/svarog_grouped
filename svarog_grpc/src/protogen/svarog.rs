@@ -94,6 +94,13 @@ pub struct Signature {
 #[derive(serde::Serialize, serde::Deserialize)]
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
+pub struct Signatures {
+    #[prost(message, repeated, tag = "1")]
+    pub signatures: ::prost::alloc::vec::Vec<Signature>,
+}
+#[derive(serde::Serialize, serde::Deserialize)]
+#[allow(clippy::derive_partial_eq_without_eq)]
+#[derive(Clone, PartialEq, ::prost::Message)]
 pub struct Void {}
 #[derive(serde::Serialize, serde::Deserialize)]
 #[allow(clippy::derive_partial_eq_without_eq)]
@@ -162,7 +169,7 @@ pub mod session_fruit {
         RootXpub(::prost::alloc::string::String),
         /// sign result
         #[prost(message, tag = "2")]
-        Signature(super::Signature),
+        Signatures(super::Signatures),
     }
 }
 #[derive(serde::Serialize, serde::Deserialize)]
