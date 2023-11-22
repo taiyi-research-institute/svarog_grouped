@@ -20,17 +20,179 @@ func (srv *SessionManager) NewSession(
 	resp = req
 
 	{ // Validate the request
-		// TODO: Assert that session type is one of "keygen", "sign", "reshare".
-		// TODO: If the session type is "keygen", assert that
-		//// 1) No group "is_reshare";
-		//// 2) every member "is_attending".
-		// TODO: If the session type is "sign", assert that
-		//// 1) No group "is_reshare";
-		//// 2) numbers of "is_attending" pass the quorum checks.
-		// TODO: If the session type is "reshare", assert that
-		//// 1) At least one group "is_reshare", and one group not "is_reshare";
-		//// 2) In groups that not "is_reshare", numbers of "is_attending" pass the quorum checks;
-		//// 3) In groups that "is_reshare", every member "is_attending".
+		assert_sestype := req.SessionType == "keygen" ||
+			req.SessionType == "sign" ||
+			req.SessionType == "reshare"
+		if !assert_sestype {
+			tr.Rollback()
+			return nil, errors.New("Invalid session type")
+		}
+
+		if req.SessionType == "keygen" {
+			_members := make(map[string]bool)
+			_groups := make(map[string]bool)
+			for _, group := range req.Groups {
+				if group.IsReshare { // No group is reshare.
+					tr.Rollback()
+					return nil, errors.New("Any keygen group should not reshare")
+				}
+				if _groups[group.GroupName] { // Every group is unique.
+					tr.Rollback()
+					return nil, errors.New("Every keygen group should be unique")
+				}
+				_groups[group.GroupName] = true
+				for _, member := range group.Members {
+					if _members[member.MemberName] { // Every member is unique.
+						tr.Rollback()
+						return nil, errors.New("Every keygen member should be unique")
+					}
+					_members[member.MemberName] = true
+					if !member.IsAttending { // Every member is attending.
+						tr.Rollback()
+						return nil, errors.New("Every keygen member should attend")
+					}
+				}
+			}
+			if len(_groups) < 1 { // At least one group.
+				tr.Rollback()
+				return nil, errors.New("At least one keygen group is required")
+			}
+			if len(_members) < 1 { // At least two members.
+				tr.Rollback()
+				return nil, errors.New("At lest one keygen members is required")
+			}
+		} else if req.SessionType == "sign" {
+			_cdd := make(map[string]bool)
+			_groups := make(map[string]bool)
+			_gq := make(map[string]uint64)
+			_gatt := make(map[string]uint64)
+			_katt := uint64(0)
+			_kq := req.KeyQuorum
+			for _, group := range req.Groups {
+				if group.IsReshare { // No group is reshare.
+					tr.Rollback()
+					return nil, errors.New("Any sign group should not reshare")
+				}
+				if _groups[group.GroupName] { // Every group is unique.
+					tr.Rollback()
+					return nil, errors.New("Every sign group should be unique")
+				}
+				_groups[group.GroupName] = true
+				_gq[group.GroupName] = group.GroupQuorum
+				for _, member := range group.Members {
+					if _cdd[member.MemberName] { // Every member is unique.
+						tr.Rollback()
+						return nil, errors.New("Every sign candidate should be unique")
+					}
+					_cdd[member.MemberName] = true
+					if member.IsAttending {
+						_gatt[group.GroupName] += 1
+						_katt += 1
+					}
+				}
+			}
+			if len(_groups) < 1 { // At least one group.
+				tr.Rollback()
+				return nil, errors.New("At least one sign group is required")
+			}
+			if len(_cdd) < 1 { // At least two members.
+				tr.Rollback()
+				return nil, errors.New("At lest one sign candidate is required")
+			}
+			if _katt < _kq { // Key quorum is satisfied.
+				tr.Rollback()
+				return nil, errors.New("Key quorum is not satisfied")
+			}
+			for _, group := range req.Groups {
+				if _gatt[group.GroupName] < _gq[group.GroupName] {
+					tr.Rollback()
+					return nil, errors.New("Group quorum is not satisfied")
+				}
+			}
+		} else {
+			{ // Analogous to sign
+				_cdd := make(map[string]bool)
+				_groups := make(map[string]bool)
+				_gq := make(map[string]uint64)
+				_gatt := make(map[string]uint64)
+				_katt := uint64(0)
+				_kq := req.KeyQuorum
+				for _, group := range req.Groups {
+					if group.IsReshare {
+						continue;
+					}
+					if _groups[group.GroupName] { // Every group is unique.
+						tr.Rollback()
+						return nil, errors.New("Every non-reshare group should be unique")
+					}
+					_groups[group.GroupName] = true
+					_gq[group.GroupName] = group.GroupQuorum
+					for _, member := range group.Members {
+						if _cdd[member.MemberName] { // Every member is unique.
+							tr.Rollback()
+							return nil, errors.New("Every non-reshare candidate should be unique")
+						}
+						_cdd[member.MemberName] = true
+						if member.IsAttending {
+							_gatt[group.GroupName] += 1
+							_katt += 1
+						}
+					}
+				}
+				if len(_groups) < 1 { // At least one group.
+					tr.Rollback()
+					return nil, errors.New("At least one non-reshare group is required")
+				}
+				if len(_cdd) < 1 { // At least two members.
+					tr.Rollback()
+					return nil, errors.New("At lest one non-reshare candidate is required")
+				}
+				if _katt < _kq { // Key quorum is satisfied.
+					tr.Rollback()
+					return nil, errors.New("Non-reshare key quorum is not satisfied")
+				}
+				for _, group := range req.Groups {
+					if _gatt[group.GroupName] < _gq[group.GroupName] {
+						tr.Rollback()
+						return nil, errors.New("Non-reshare group quorum is not satisfied")
+					}
+				}
+			}
+
+			{ // Analogous to keygen
+				_members := make(map[string]bool)
+				_groups := make(map[string]bool)
+				for _, group := range req.Groups {
+					if !group.IsReshare {
+						continue
+					}
+					if _groups[group.GroupName] { // Every group is unique.
+						tr.Rollback()
+						return nil, errors.New("Every reshare group should be unique")
+					}
+					_groups[group.GroupName] = true
+					for _, member := range group.Members {
+						if _members[member.MemberName] { // Every member is unique.
+							tr.Rollback()
+							return nil, errors.New("Every reshare member should be unique")
+						}
+						_members[member.MemberName] = true
+						if !member.IsAttending { // Every member is attending.
+							tr.Rollback()
+							return nil, errors.New("Every reshare member should attend")
+						}
+					}
+				}
+				if len(_groups) < 1 { // At least one group.
+					tr.Rollback()
+					return nil, errors.New("At least one reshare group is required")
+				}
+				if len(_members) < 1 { // At least one member.
+					tr.Rollback()
+					return nil, errors.New("At lest one reshare member is required")
+				}
+			}
+		}
 	}
 
 	// Assign session_id if not provided
