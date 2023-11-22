@@ -2,9 +2,10 @@ package main
 
 import (
 	"fmt"
+	"net"
+
 	"github.com/BurntSushi/toml"
 	"google.golang.org/grpc"
-	"net"
 
 	biz "svarog_manager/bizlogic"
 	pb "svarog_manager/proto/gen"

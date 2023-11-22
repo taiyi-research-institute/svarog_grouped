@@ -20,7 +20,7 @@ type MpcGroup struct {
 	GroupName   string
 	GroupQuorum uint64
 	IsReshare   bool
-	MpcSession  MpcSession `gorm:"constraint:OnUpdate:RESTRICT,OnDelete:CASCADE"`
+	MpcSession  MpcSession `gorm:"foreignKey:SessionId;references:SessionId;constraint:OnUpdate:RESTRICT,OnDelete:CASCADE"`
 }
 
 type MpcMember struct {
@@ -30,7 +30,7 @@ type MpcMember struct {
 	MemberName   string
 	IsAttending  bool
 	IsTerminated bool
-	MpcGroup     MpcGroup `gorm:"constraint:OnUpdate:RESTRICT,OnDelete:CASCADE"`
+	MpcGroup     MpcGroup `gorm:"foreignKey:SessionId,GroupId;references:SessionId,GroupId;constraint:OnUpdate:RESTRICT,OnDelete:CASCADE"`
 }
 
 type MpcMessage struct {
@@ -42,5 +42,5 @@ type MpcMessage struct {
 
 	// It worth to trade some consistency, i.e. no foreign key of MemberId, for simpler server code.
 	// If the data is inconsistent, the mpc clients will fail.
-	MpcSession MpcSession `gorm:"constraint:OnUpdate:RESTRICT,OnDelete:CASCADE"`
+	MpcSession MpcSession `gorm:"foreignKey:SessionId;references:SessionId;constraint:OnUpdate:RESTRICT,OnDelete:CASCADE"`
 }

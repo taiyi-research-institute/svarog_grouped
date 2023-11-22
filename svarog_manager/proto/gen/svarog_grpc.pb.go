@@ -31,7 +31,7 @@ type MpcPeerClient interface {
 	JoinSession(ctx context.Context, in *JoinSessionRequest, opts ...grpc.CallOption) (*Void, error)
 	GetSessionFruit(ctx context.Context, in *SessionId, opts ...grpc.CallOption) (*SessionFruit, error)
 	// When biz detected wrong Tx, call this to abort session.
-	AbortSession(ctx context.Context, in *AbortSessionRequest, opts ...grpc.CallOption) (*Void, error)
+	AbortSession(ctx context.Context, in *Whistle, opts ...grpc.CallOption) (*Void, error)
 }
 
 type mpcPeerClient struct {
@@ -60,7 +60,7 @@ func (c *mpcPeerClient) GetSessionFruit(ctx context.Context, in *SessionId, opts
 	return out, nil
 }
 
-func (c *mpcPeerClient) AbortSession(ctx context.Context, in *AbortSessionRequest, opts ...grpc.CallOption) (*Void, error) {
+func (c *mpcPeerClient) AbortSession(ctx context.Context, in *Whistle, opts ...grpc.CallOption) (*Void, error) {
 	out := new(Void)
 	err := c.cc.Invoke(ctx, MpcPeer_AbortSession_FullMethodName, in, out, opts...)
 	if err != nil {
@@ -76,7 +76,7 @@ type MpcPeerServer interface {
 	JoinSession(context.Context, *JoinSessionRequest) (*Void, error)
 	GetSessionFruit(context.Context, *SessionId) (*SessionFruit, error)
 	// When biz detected wrong Tx, call this to abort session.
-	AbortSession(context.Context, *AbortSessionRequest) (*Void, error)
+	AbortSession(context.Context, *Whistle) (*Void, error)
 	mustEmbedUnimplementedMpcPeerServer()
 }
 
@@ -90,7 +90,7 @@ func (UnimplementedMpcPeerServer) JoinSession(context.Context, *JoinSessionReque
 func (UnimplementedMpcPeerServer) GetSessionFruit(context.Context, *SessionId) (*SessionFruit, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method GetSessionFruit not implemented")
 }
-func (UnimplementedMpcPeerServer) AbortSession(context.Context, *AbortSessionRequest) (*Void, error) {
+func (UnimplementedMpcPeerServer) AbortSession(context.Context, *Whistle) (*Void, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method AbortSession not implemented")
 }
 func (UnimplementedMpcPeerServer) mustEmbedUnimplementedMpcPeerServer() {}
@@ -143,7 +143,7 @@ func _MpcPeer_GetSessionFruit_Handler(srv interface{}, ctx context.Context, dec 
 }
 
 func _MpcPeer_AbortSession_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
-	in := new(AbortSessionRequest)
+	in := new(Whistle)
 	if err := dec(in); err != nil {
 		return nil, err
 	}
@@ -155,7 +155,7 @@ func _MpcPeer_AbortSession_Handler(srv interface{}, ctx context.Context, dec fun
 		FullMethod: MpcPeer_AbortSession_FullMethodName,
 	}
 	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
-		return srv.(MpcPeerServer).AbortSession(ctx, req.(*AbortSessionRequest))
+		return srv.(MpcPeerServer).AbortSession(ctx, req.(*Whistle))
 	}
 	return interceptor(ctx, in, info, handler)
 }

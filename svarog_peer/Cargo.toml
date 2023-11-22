@@ -6,3 +6,35 @@ edition = "2021"
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
+sqlx = { version = "0.7", features = ["sqlite", "runtime-tokio-native-tls"] }
+tonic = { version = "0.10", features = ["gzip", "channel"] }
+tokio = { version = "1", features = ["full"] }
+prost = "0.11.9"
+prost-types = "0.11.9"
+
+[dependencies.svarog_grpc]
+path = "../svarog_grpc"
+
+[dependencies.svarog_mpc_sdk]
+path = "../svarog_mpc_sdk"
+
+[dependencies.xuanmi_base_support]
+git = "ssh://git@github.com/taiyi-research-institute/xuanmi_base_support"
+branch = "main"
+
+[patch.crates-io]
+curv-kzen = { path = "./target/patch/curv-kzen-0.9.0" }
+
+[package.metadata.patch.curv-kzen]
+version = "0.9.0"
+patches = [{ path = "patches/curv-kzen.patch", source = "GithubPrDiff" }]
+allow = ["dead_code", "unused_imports", "unused_variables", "unused_mut"]
+
+[build-dependencies]
+cargo-patch = "0.3"
+
+[profile.release]
+opt-level = 3
+lto = true
+codegen-units = 1
+strip = true

@@ -9,7 +9,7 @@ service MpcPeer {
     rpc GetSessionFruit(SessionId) returns (SessionFruit);
     
     // When biz detected wrong Tx, call this to abort session.
-    rpc AbortSession(AbortSessionRequest) returns (Void);
+    rpc AbortSession(Whistle) returns (Void);
 }
 
 service MpcSessionManager {
@@ -47,11 +47,6 @@ message JoinSessionRequest {
 
     string token = 4; // Used for authentication
     string mnemonics = 5; // Only end-user provides this. Leave blank for API calls.
-}
-
-message AbortSessionRequest {
-    string peer_id = 1;
-    string reason = 2;
 }
 
 message Group {

@@ -60,7 +60,7 @@ impl MpcMember {
         })
     }
 
-    pub async fn fetch_session_config(&mut self, ses_id: &str) -> Outcome<SessionConfig> {
+    pub async fn fetch_session_config(&self, ses_id: &str) -> Outcome<SessionConfig> {
         let mut grpc_client = MpcSessionManagerClient::connect(self.grpc_hostport.to_owned())
             .await
             .catch_()?;

@@ -80,6 +80,7 @@ func (srv *SessionManager) InitDB() {
 	if err != nil {
 		panic(err)
 	}
+	srv.db = db
 }
 
 func (srv *SessionManager) InitSessionRecycler() {

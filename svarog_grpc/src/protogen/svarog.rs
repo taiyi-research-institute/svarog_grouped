@@ -20,7 +20,7 @@ pub struct SessionConfig {
     /// When creating session, set to 0
     #[prost(int64, tag = "7")]
     pub expire_after_finish: i64,
-    /// [] means unset
+    /// \[\] means unset
     #[prost(message, optional, tag = "17")]
     pub to_sign: ::core::option::Option<ToSign>,
 }
@@ -42,15 +42,6 @@ pub struct JoinSessionRequest {
     /// Only end-user provides this. Leave blank for API calls.
     #[prost(string, tag = "5")]
     pub mnemonics: ::prost::alloc::string::String,
-}
-#[derive(serde::Serialize, serde::Deserialize)]
-#[allow(clippy::derive_partial_eq_without_eq)]
-#[derive(Clone, PartialEq, ::prost::Message)]
-pub struct AbortSessionRequest {
-    #[prost(string, tag = "1")]
-    pub peer_id: ::prost::alloc::string::String,
-    #[prost(string, tag = "2")]
-    pub reason: ::prost::alloc::string::String,
 }
 #[derive(serde::Serialize, serde::Deserialize)]
 #[allow(clippy::derive_partial_eq_without_eq)]
@@ -151,7 +142,7 @@ pub struct Message {
     pub member_id_src: u64,
     #[prost(uint64, tag = "4")]
     pub member_id_dst: u64,
-    /// if set to [], remaining fields are used as index.
+    /// if set to \[\], remaining fields are used as index.
     #[prost(bytes = "vec", tag = "5")]
     pub body: ::prost::alloc::vec::Vec<u8>,
 }
@@ -329,7 +320,7 @@ pub mod mpc_peer_client {
         /// When biz detected wrong Tx, call this to abort session.
         pub async fn abort_session(
             &mut self,
-            request: impl tonic::IntoRequest<super::AbortSessionRequest>,
+            request: impl tonic::IntoRequest<super::Whistle>,
         ) -> std::result::Result<tonic::Response<super::Void>, tonic::Status> {
             self.inner
                 .ready()
@@ -590,7 +581,7 @@ pub mod mpc_peer_server {
         /// When biz detected wrong Tx, call this to abort session.
         async fn abort_session(
             &self,
-            request: tonic::Request<super::AbortSessionRequest>,
+            request: tonic::Request<super::Whistle>,
         ) -> std::result::Result<tonic::Response<super::Void>, tonic::Status>;
     }
     /// A peer handles multiple shards of multiple keys.
@@ -692,7 +683,7 @@ pub mod mpc_peer_server {
                         ) -> Self::Future {
                             let inner = Arc::clone(&self.0);
                             let fut = async move {
-                                (*inner).join_session(request).await
+                                <T as MpcPeer>::join_session(&inner, request).await
                             };
                             Box::pin(fut)
                         }
@@ -736,7 +727,7 @@ pub mod mpc_peer_server {
                         ) -> Self::Future {
                             let inner = Arc::clone(&self.0);
                             let fut = async move {
-                                (*inner).get_session_fruit(request).await
+                                <T as MpcPeer>::get_session_fruit(&inner, request).await
                             };
                             Box::pin(fut)
                         }
@@ -767,9 +758,7 @@ pub mod mpc_peer_server {
                 "/svarog.MpcPeer/AbortSession" => {
                     #[allow(non_camel_case_types)]
                     struct AbortSessionSvc<T: MpcPeer>(pub Arc<T>);
-                    impl<
-                        T: MpcPeer,
-                    > tonic::server::UnaryService<super::AbortSessionRequest>
+                    impl<T: MpcPeer> tonic::server::UnaryService<super::Whistle>
                     for AbortSessionSvc<T> {
                         type Response = super::Void;
                         type Future = BoxFuture<
@@ -778,11 +767,11 @@ pub mod mpc_peer_server {
                         >;
                         fn call(
                             &mut self,
-                            request: tonic::Request<super::AbortSessionRequest>,
+                            request: tonic::Request<super::Whistle>,
                         ) -> Self::Future {
                             let inner = Arc::clone(&self.0);
                             let fut = async move {
-                                (*inner).abort_session(request).await
+                                <T as MpcPeer>::abort_session(&inner, request).await
                             };
                             Box::pin(fut)
                         }
@@ -981,7 +970,9 @@ pub mod mpc_session_manager_server {
                             request: tonic::Request<super::SessionConfig>,
                         ) -> Self::Future {
                             let inner = Arc::clone(&self.0);
-                            let fut = async move { (*inner).new_session(request).await };
+                            let fut = async move {
+                                <T as MpcSessionManager>::new_session(&inner, request).await
+                            };
                             Box::pin(fut)
                         }
                     }
@@ -1026,7 +1017,11 @@ pub mod mpc_session_manager_server {
                         ) -> Self::Future {
                             let inner = Arc::clone(&self.0);
                             let fut = async move {
-                                (*inner).get_session_config(request).await
+                                <T as MpcSessionManager>::get_session_config(
+                                        &inner,
+                                        request,
+                                    )
+                                    .await
                             };
                             Box::pin(fut)
                         }
@@ -1071,7 +1066,8 @@ pub mod mpc_session_manager_server {
                         ) -> Self::Future {
                             let inner = Arc::clone(&self.0);
                             let fut = async move {
-                                (*inner).blow_whistle(request).await
+                                <T as MpcSessionManager>::blow_whistle(&inner, request)
+                                    .await
                             };
                             Box::pin(fut)
                         }
@@ -1116,7 +1112,8 @@ pub mod mpc_session_manager_server {
                         ) -> Self::Future {
                             let inner = Arc::clone(&self.0);
                             let fut = async move {
-                                (*inner).post_message(request).await
+                                <T as MpcSessionManager>::post_message(&inner, request)
+                                    .await
                             };
                             Box::pin(fut)
                         }
@@ -1160,7 +1157,9 @@ pub mod mpc_session_manager_server {
                             request: tonic::Request<super::Message>,
                         ) -> Self::Future {
                             let inner = Arc::clone(&self.0);
-                            let fut = async move { (*inner).get_message(request).await };
+                            let fut = async move {
+                                <T as MpcSessionManager>::get_message(&inner, request).await
+                            };
                             Box::pin(fut)
                         }
                     }
@@ -1205,7 +1204,8 @@ pub mod mpc_session_manager_server {
                         ) -> Self::Future {
                             let inner = Arc::clone(&self.0);
                             let fut = async move {
-                                (*inner).terminate_session(request).await
+                                <T as MpcSessionManager>::terminate_session(&inner, request)
+                                    .await
                             };
                             Box::pin(fut)
                         }

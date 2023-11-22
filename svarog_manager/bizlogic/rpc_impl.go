@@ -119,7 +119,7 @@ func (srv *SessionManager) NewSession(
 				_kq := req.KeyQuorum
 				for _, group := range req.Groups {
 					if group.IsReshare {
-						continue;
+						continue
 					}
 					if _groups[group.GroupName] { // Every group is unique.
 						tr.Rollback()
