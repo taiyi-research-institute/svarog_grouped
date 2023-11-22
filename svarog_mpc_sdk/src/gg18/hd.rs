@@ -146,7 +146,7 @@ pub fn algo_get_hd_key(
 mod tests {
     use std::ops::Deref;
 
-    use crate::algo::algo_get_hd_key;
+    use crate::gg18::algo_get_hd_key;
     use curv::elliptic::curves::{secp256_k1::Secp256k1, Point};
     use xuanmi_base_support::*;
     const TE: &str = "TestException";

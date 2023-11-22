@@ -73,6 +73,7 @@ message Signature {
     bytes s = 2;
     bool  v = 3;
     string derive_path = 4;
+    bytes tx_hash = 5;
 }
 
 message Signatures {

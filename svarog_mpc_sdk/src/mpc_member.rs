@@ -1,7 +1,6 @@
 use crate::util::*;
 use miniz_oxide::{deflate::compress_to_vec, inflate::decompress_to_vec};
 use serde::{de::DeserializeOwned, Serialize};
-use svarog_grpc::protogen::svarog::TxHash;
 use std::collections::{HashMap, HashSet};
 use std::time::{SystemTime, UNIX_EPOCH};
 use svarog_grpc::protogen::svarog::{
@@ -25,7 +24,6 @@ pub struct MpcMember {
     member_id: usize,
     group_id: usize,
 
-    to_sign: Vec<TxHash>,
     session_id: String,
     expire_at: i64,
     grpc_hostport: String,
@@ -53,10 +51,11 @@ impl MpcMember {
             reshare_members: HashSet::new(),
             member_id: 0,
             group_id: 0,
-            to_sign: Vec::new(),
+
             session_id: "".to_string(),
             expire_at: 0,
             grpc_hostport: grpc_hostport.to_owned(),
+
             ses_conf: SessionConfig::default(),
         })
     }
@@ -114,9 +113,6 @@ impl MpcMember {
             }
         }
         assert_throw!(self.member_id != 0, "Member not found in session config");
-        if let Some(to_sign) = &ses_config.to_sign {
-            self.to_sign = to_sign.tx_hashes.clone();
-        }
         self.session_id = ses_config.session_id.clone();
         self.expire_at = ses_config.expire_before_finish;
         self.ses_conf = ses_config.clone();
@@ -266,8 +262,20 @@ impl MpcMember {
         self.key_quorum
     }
 
-    pub fn attr_gruop_quorum(&self) -> usize {
+    pub fn attr_curr_group_quorum(&self) -> usize {
         self.group_quora.get(&self.group_id).unwrap().clone()
+    }
+
+    pub fn attr_curr_group_members(&self) -> &HashSet<usize> {
+        self.group_member.get(&self.group_id).unwrap()
+    }
+
+    pub fn attr_curr_member_group(&self) -> usize {
+        self.member_group.get(&self.member_id).unwrap().clone()
+    }
+
+    pub fn attr_members(&self) -> &HashMap<usize, usize> {
+        &self.member_group
     }
 
     pub fn attr_n_registered(&self) -> usize {

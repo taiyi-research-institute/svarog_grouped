@@ -18,7 +18,7 @@ use tonic::async_trait;
 use xuanmi_base_support::*;
 use zk_paillier::zkproofs::DLogStatement;
 
-use super::{aes, *};
+use super::*;
 use crate::mpc_member::*;
 use crate::{mta::range_proofs::*, util::*};
 
@@ -35,7 +35,7 @@ impl AlgoKeygenMnem for MpcMember {
             share_count: self.attr_n_registered() as u16,
         };
         let group_config = Parameters {
-            threshold: (self.attr_gruop_quorum() - 1) as u16,
+            threshold: (self.attr_curr_group_quorum() - 1) as u16,
             share_count: self.attr_group_n_registered() as u16,
         };
         let my_id = self.attr_member_id();
@@ -272,7 +272,7 @@ impl AlgoKeygenMnem for MpcMember {
         for id in self.attr_group_members() {
             let key: Vec<u8> = enc_keys.get(id).unwrap().to_bytes();
             let unencrypted: Vec<u8> = secret_shares_inner.get(id).unwrap().to_bytes().to_vec();
-            let aead: AEAD = aes::aes_encrypt(&key, &unencrypted).catch_()?;
+            let aead: AEAD = aes_encrypt(&key, &unencrypted).catch_()?;
             self.post_message(MpcPeer::Member(*id), purpose, &aead)
                 .await
                 .catch_()?;
@@ -286,7 +286,7 @@ impl AlgoKeygenMnem for MpcMember {
         for (mid, _gid) in self.attr_all_registered_members() {
             let key: Vec<u8> = enc_keys.get(mid).unwrap().to_bytes();
             let unencrypted: Vec<u8> = secret_shares_outer.get(mid).unwrap().to_bytes().to_vec();
-            let aead: AEAD = aes::aes_encrypt(&key, &unencrypted).catch_()?;
+            let aead: AEAD = aes_encrypt(&key, &unencrypted).catch_()?;
             self.post_message(MpcPeer::Member(*mid), purpose, &aead)
                 .await
                 .catch_()?;
@@ -301,7 +301,7 @@ impl AlgoKeygenMnem for MpcMember {
             } else {
                 let aead = share_inner_vec.get(id).ifnone_()?;
                 let key = enc_keys.get(id).unwrap().to_bytes();
-                let decrypted = aes::aes_decrypt(&key, &aead).catch_()?;
+                let decrypted = aes_decrypt(&key, &aead).catch_()?;
                 party_shares_inner
                     .insert(*id, Scalar::<Secp256k1>::from_bytes(&decrypted).catch_()?);
             }
@@ -314,7 +314,7 @@ impl AlgoKeygenMnem for MpcMember {
             } else {
                 let aead = share_outer_vec.get(id).ifnone_()?;
                 let key = enc_keys.get(id).unwrap().to_bytes();
-                let decrypted = aes::aes_decrypt(&key, &aead).catch_()?;
+                let decrypted = aes_decrypt(&key, &aead).catch_()?;
                 party_shares_outer
                     .insert(*id, Scalar::<Secp256k1>::from_bytes(&decrypted).catch_()?);
             }
@@ -390,8 +390,8 @@ impl AlgoKeygenMnem for MpcMember {
                     .unwrap();
                 chain_code
             },
-            vss_schemes_inner: vss_inner_vec.clone(),
-            vss_schemes_outer: vss_outer_vec.clone(),
+            vss_inner_vec: vss_inner_vec.clone(),
+            vss_outer_vec: vss_outer_vec.clone(),
             paillier_keys: {
                 let mut paillier_keys = SparseVec::with_capacity(16);
                 for (id, com) in com_vec.iter() {
