@@ -12,51 +12,44 @@ use xuanmi_base_support::*;
 
 #[derive(Clone)]
 pub struct MpcMember {
-    member_group: HashMap<usize, usize>,
-    member_names: HashMap<usize, String>,
-    member_attending: HashSet<usize>,
-    group_member: HashMap<usize, HashSet<usize>>,
-    group_names: HashMap<usize, String>,
-    group_quora: HashMap<usize, usize>,
-    key_quorum: usize,
-    reshare_groups: HashSet<usize>,
-    reshare_members: HashSet<usize>,
-    member_id: usize,
-    group_id: usize,
+    pub member_id: usize,
+    pub group_id: usize,
+    pub member_attending: HashSet<usize>,
+    pub member_group: HashMap<usize, usize>,
+    pub group_member: HashMap<usize, HashSet<usize>>,
+    pub group_quora: HashMap<usize, usize>,
+    pub key_quorum: usize,
+    pub reshare_groups: HashSet<usize>,
+    pub reshare_members: HashSet<usize>,
+    pub mnem_provider_id: usize,
 
     session_id: String,
     expire_at: i64,
     grpc_hostport: String,
-
-    ses_conf: SessionConfig,
 }
 
-pub enum MpcPeer {
-    Member(usize),
-    Group(usize),
-    All(),
+pub enum MpcPeer<'a, C: IntoIterator<Item = usize>> {
+    Single(usize),
+    Plural(&'a C),
 }
 
 impl MpcMember {
     pub async fn new(grpc_hostport: &str) -> Outcome<Self> {
         Ok(MpcMember {
             member_group: HashMap::new(),
-            member_names: HashMap::new(),
             member_attending: HashSet::new(),
             group_member: HashMap::new(),
-            group_names: HashMap::new(),
             group_quora: HashMap::new(),
             key_quorum: 0,
             reshare_groups: HashSet::new(),
             reshare_members: HashSet::new(),
             member_id: 0,
             group_id: 0,
+            mnem_provider_id: 0,
 
             session_id: "".to_string(),
             expire_at: 0,
             grpc_hostport: grpc_hostport.to_owned(),
-
-            ses_conf: SessionConfig::default(),
         })
     }
 
@@ -83,16 +76,12 @@ impl MpcMember {
         self.key_quorum = ses_config.key_quorum as usize;
         for group in &ses_config.groups {
             let group_id = group.group_id;
-            self.group_names
-                .insert(group_id as usize, group.group_name.clone());
             self.group_quora
                 .insert(group_id as usize, group.group_quorum as usize);
             for member in &group.members {
                 let member_id = member.member_id;
                 self.member_group
                     .insert(member_id as usize, group_id as usize);
-                self.member_names
-                    .insert(member_id as usize, member.member_name.clone());
                 if member.is_attending {
                     self.member_attending.insert(member_id as usize);
                 }
@@ -107,6 +96,9 @@ impl MpcMember {
                     self.member_id = member_id as usize;
                     self.group_id = group_id as usize;
                 }
+                if member_name == "__mnem_provider" {
+                    self.mnem_provider_id = member_id as usize;
+                }
             }
             if group.is_reshare {
                 self.reshare_groups.insert(group_id as usize);
@@ -115,7 +107,6 @@ impl MpcMember {
         assert_throw!(self.member_id != 0, "Member not found in session config");
         self.session_id = ses_config.session_id.clone();
         self.expire_at = ses_config.expire_before_finish;
-        self.ses_conf = ses_config.clone();
         Ok(())
     }
 
@@ -142,175 +133,92 @@ impl MpcMember {
         Ok(())
     }
 
-    pub async fn post_message<T>(&self, dst: MpcPeer, purpose: &str, obj: &T) -> Outcome<()>
+    pub async fn postmsg_p2p<T>(&self, dst: usize, purpose: &str, obj: &T) -> Outcome<()>
     where
         T: Serialize + DeserializeOwned,
     {
         let mut grpc_client = MpcSessionManagerClient::connect(self.grpc_hostport.to_owned())
             .await
             .catch_()?;
-        match dst {
-            MpcPeer::Member(member_id) => {
-                let bytes = obj.compress().catch_()?;
-                let msg = Message {
-                    session_id: self.session_id.clone(),
-                    purpose: purpose.to_string(),
-                    member_id_src: self.member_id as u64,
-                    member_id_dst: member_id as u64,
-                    body: bytes,
-                };
-                self.assert_on_time().catch_()?;
-                let _ = grpc_client.post_message(msg).await.catch_()?;
-            }
-            MpcPeer::Group(group_id) => {
-                let bytes = obj.compress().catch_()?;
-                for member_id in self.group_member.get(&group_id).unwrap() {
-                    let msg = Message {
-                        session_id: self.session_id.clone(),
-                        purpose: purpose.to_string(),
-                        member_id_src: self.member_id as u64,
-                        member_id_dst: *member_id as u64,
-                        body: bytes.clone(),
-                    };
-                    self.assert_on_time().catch_()?;
-                    let _ = grpc_client.post_message(msg).await.catch_()?;
-                }
-            }
-            MpcPeer::All() => {
-                let bytes = obj.compress().catch_()?;
-                for member_id in self.member_group.keys() {
-                    let msg = Message {
-                        session_id: self.session_id.clone(),
-                        purpose: purpose.to_string(),
-                        member_id_src: self.member_id as u64,
-                        member_id_dst: *member_id as u64,
-                        body: bytes.clone(),
-                    };
-                    self.assert_on_time().catch_()?;
-                    let _ = grpc_client.post_message(msg).await.catch_()?;
-                }
-            }
+        let bytes = obj.compress().catch_()?;
+        let msg = Message {
+            session_id: self.session_id.clone(),
+            purpose: purpose.to_string(),
+            member_id_src: self.member_id as u64,
+            member_id_dst: dst as u64,
+            body: bytes,
+        };
+        self.assert_on_time().catch_()?;
+        let _ = grpc_client.post_message(msg).await.catch_()?;
+        Ok(())
+    }
+
+    pub async fn getmsg_p2p<T>(&self, src: usize, purpose: &str) -> Outcome<T>
+    where
+        T: Serialize + DeserializeOwned,
+    {
+        let mut grpc_client = MpcSessionManagerClient::connect(self.grpc_hostport.to_owned())
+            .await
+            .catch_()?;
+        let msg = Message {
+            session_id: self.session_id.clone(),
+            purpose: purpose.to_string(),
+            member_id_src: src as u64,
+            member_id_dst: self.member_id as u64,
+            body: Vec::new(),
+        };
+        self.assert_on_time().catch_()?;
+        let msg = grpc_client.get_message(msg).await.catch_()?.into_inner();
+        let obj = msg.body.decompress().catch_()?;
+        Ok(obj)
+    }
+
+    pub async fn postmsg_mcast<'a, It, T>(&self, dst_set: It, purpose: &str, obj: &T) -> Outcome<()>
+    where
+        It: Iterator<Item = &'a usize>,
+        T: Serialize + DeserializeOwned,
+    {
+        let mut grpc_client = MpcSessionManagerClient::connect(self.grpc_hostport.to_owned())
+            .await
+            .catch_()?;
+        let bytes = obj.compress().catch_()?;
+        for dst in dst_set {
+            let msg = Message {
+                session_id: self.session_id.clone(),
+                purpose: purpose.to_string(),
+                member_id_src: self.member_id as u64,
+                member_id_dst: *dst as u64,
+                body: bytes.clone(),
+            };
+            self.assert_on_time().catch_()?;
+            let _ = grpc_client.post_message(msg).await.catch_()?;
         }
         Ok(())
     }
 
-    pub async fn get_message<T>(&self, src: MpcPeer, purpose: &str) -> Outcome<SparseVec<T>>
+    pub async fn getmsg_mcast<'a, It, T>(&self, src_set: It, purpose: &str) -> Outcome<SparseVec<T>>
     where
+        It: Iterator<Item = &'a usize>,
         T: Serialize + DeserializeOwned,
     {
         let mut grpc_client = MpcSessionManagerClient::connect(self.grpc_hostport.to_owned())
             .await
             .catch_()?;
         let mut sparse_array = SparseVec::<T>::new();
-        match src {
-            MpcPeer::Member(member_id) => {
-                let msg = Message {
-                    session_id: self.session_id.clone(),
-                    purpose: purpose.to_string(),
-                    member_id_src: member_id as u64,
-                    member_id_dst: self.member_id as u64,
-                    body: Vec::new(),
-                };
-                self.assert_on_time().catch_()?;
-                let msg = grpc_client.get_message(msg).await.catch_()?.into_inner();
-                let obj = msg.body.decompress().catch_()?;
-                sparse_array.insert(member_id, obj);
-            }
-            MpcPeer::Group(group_id) => {
-                for member_id in self.group_member.get(&group_id).unwrap() {
-                    let msg = Message {
-                        session_id: self.session_id.clone(),
-                        purpose: purpose.to_string(),
-                        member_id_src: *member_id as u64,
-                        member_id_dst: self.member_id as u64,
-                        body: Vec::new(),
-                    };
-                    self.assert_on_time().catch_()?;
-                    let msg = grpc_client.get_message(msg).await.catch_()?.into_inner();
-                    let obj = msg.body.decompress().catch_()?;
-                    sparse_array.insert(*member_id, obj);
-                }
-            }
-            MpcPeer::All() => {
-                for member_id in self.member_group.keys() {
-                    let msg = Message {
-                        session_id: self.session_id.clone(),
-                        purpose: purpose.to_string(),
-                        member_id_src: *member_id as u64,
-                        member_id_dst: self.member_id as u64,
-                        body: Vec::new(),
-                    };
-                    self.assert_on_time().catch_()?;
-                    let msg = grpc_client.get_message(msg).await.catch_()?.into_inner();
-                    let obj = msg.body.decompress().catch_()?;
-                    sparse_array.insert(*member_id, obj);
-                }
-            }
+        for src in src_set {
+            let msg = Message {
+                session_id: self.session_id.clone(),
+                purpose: purpose.to_string(),
+                member_id_src: *src as u64,
+                member_id_dst: self.member_id as u64,
+                body: Vec::new(),
+            };
+            self.assert_on_time().catch_()?;
+            let msg = grpc_client.get_message(msg).await.catch_()?.into_inner();
+            let obj = msg.body.decompress().catch_()?;
+            sparse_array.insert(*src, obj);
         }
         Ok(sparse_array)
-    }
-
-    pub fn attr_member_id(&self) -> usize {
-        self.member_id
-    }
-
-    pub fn attr_group_id(&self) -> usize {
-        self.group_id
-    }
-
-    pub fn attr_key_quorum(&self) -> usize {
-        self.key_quorum
-    }
-
-    pub fn attr_curr_group_quorum(&self) -> usize {
-        self.group_quora.get(&self.group_id).unwrap().clone()
-    }
-
-    pub fn attr_curr_group_members(&self) -> &HashSet<usize> {
-        self.group_member.get(&self.group_id).unwrap()
-    }
-
-    pub fn attr_curr_member_group(&self) -> usize {
-        self.member_group.get(&self.member_id).unwrap().clone()
-    }
-
-    pub fn attr_members(&self) -> &HashMap<usize, usize> {
-        &self.member_group
-    }
-
-    pub fn attr_n_registered(&self) -> usize {
-        self.member_names.len()
-    }
-
-    pub fn attr_n_attend(&self) -> usize {
-        self.member_attending.len()
-    }
-
-    pub fn attr_group_n_registered(&self) -> usize {
-        self.group_member.get(&self.group_id).unwrap().len()
-    }
-
-    pub fn attr_group_n_attend(&self) -> usize {
-        let mut n_attend = 0;
-        let candidates = self.group_member.get(&self.group_id).unwrap();
-        for member_id in candidates {
-            if self.member_attending.contains(member_id) {
-                n_attend += 1;
-            }
-        }
-        n_attend
-    }
-
-    pub fn attr_group_members(&self) -> &HashSet<usize> {
-        self.group_member.get(&self.group_id).unwrap()
-    }
-
-    pub fn attr_all_registered_members(&self) -> &SparseVec<usize> {
-        &self.member_group
-    }
-
-    pub fn attr_session_config(&self) -> &SessionConfig {
-        &self.ses_conf
     }
 }
 

@@ -41,7 +41,7 @@ features = ["num-bigint"]
 
 [package.metadata.patch.curv-kzen]
 version = "0.9.0"
-patches = [{ path = "patches/curv-kzen.patch", source = "GithubPrDiff" }]
+patches = [{ path = "../patches/curv-kzen.patch", source = "GithubPrDiff" }]
 allow = ["dead_code", "unused_imports", "unused_variables", "unused_mut"]
 
 [patch.crates-io]

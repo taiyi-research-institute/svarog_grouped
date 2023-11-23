@@ -32,18 +32,30 @@ pub trait AlgoKeygen {
 #[async_trait]
 impl AlgoKeygen for MpcMember {
     async fn algo_keygen(&mut self) -> Outcome<KeyStore> {
+        let my_id = self.member_id;
+        let my_group_id = self.group_id;
+        let key_mates = self.member_attending.clone();
+        let group_mates = self.group_member[&self.group_id].clone();
+        let key_mates_wome = {
+            let mut _km = key_mates.clone();
+            _km.remove(&my_id);
+            _km
+        };
+        let group_mates_wome = {
+            let mut _gm = group_mates.clone();
+            _gm.remove(&my_id);
+            _gm
+        };
         let config = Parameters {
-            threshold: (self.attr_key_quorum() - 1) as u16,
-            share_count: self.attr_n_registered() as u16,
+            threshold: (self.key_quorum - 1) as u16,
+            share_count: key_mates.len() as u16,
         };
         let group_config = Parameters {
-            threshold: (self.attr_curr_group_quorum() - 1) as u16,
-            share_count: self.attr_group_n_registered() as u16,
+            threshold: (self.group_quora[&my_group_id] - 1) as u16,
+            share_count: group_mates.len() as u16,
         };
-        let my_id = self.attr_member_id();
-        let my_group_id = self.attr_group_id();
 
-        let party_keys = Keys::create_with_safe_prime(self.attr_member_id() as u16); // instead of kzen::Keys::create(my_id)
+        let party_keys = Keys::create_with_safe_prime(my_id as u16); // instead of kzen::Keys::create(my_id)
         let _mnemonic = Mnemonic::from_entropy(
             (&party_keys.u_i.0 + &party_keys.u_i.1).to_bytes().as_ref(),
             Language::English,
@@ -53,18 +65,22 @@ impl AlgoKeygen for MpcMember {
 
         let mut purpose = "commitment";
         let (bc_i, decom_i) = party_keys.phase1_com_decom();
-        self.post_message(MpcPeer::All(), purpose, &bc_i)
+        self.postmsg_mcast(key_mates.iter(), purpose, &bc_i)
             .await
             .catch_()?;
-        let com_vec: SparseVec<KeyGenBroadcastMessage1> =
-            self.get_message(MpcPeer::All(), purpose).await.catch_()?;
+        let com_vec: SparseVec<KeyGenBroadcastMessage1> = self
+            .getmsg_mcast(key_mates.iter(), purpose)
+            .await
+            .catch_()?;
 
         purpose = "decommitment";
-        self.post_message(MpcPeer::All(), purpose, &decom_i)
+        self.postmsg_mcast(key_mates.iter(), purpose, &decom_i)
             .await
             .catch_()?;
-        let decom_vec: SparseVec<KeyGenDecommitMessage1> =
-            self.get_message(MpcPeer::All(), purpose).await.catch_()?;
+        let decom_vec: SparseVec<KeyGenDecommitMessage1> = self
+            .getmsg_mcast(key_mates.iter(), purpose)
+            .await
+            .catch_()?;
         let point_inner_vec: SparseVec<Point<Secp256k1>> = {
             let mut point_inner_vec = SparseVec::with_capacity(16);
             for (id, decom) in decom_vec.iter() {
@@ -90,8 +106,8 @@ impl AlgoKeygen for MpcMember {
             enc_keys
         };
 
-        let decom_vec = decom_vec.values_sorted_by_key_asc();
-        let (decom_head, decom_tail) = decom_vec.split_at(1);
+        let _decom_vec = decom_vec.values_sorted_by_key_asc();
+        let (decom_head, decom_tail) = _decom_vec.split_at(1);
         let decom_head = &decom_head[0];
         let y_sum = decom_tail // accumulate over tails
             .iter()
@@ -112,11 +128,13 @@ impl AlgoKeygen for MpcMember {
             range_proof_public_setup =
                 ZkpPublicSetup::from_private_zkp_setup(&range_proof_setup).catch_()?;
         }
-        self.post_message(MpcPeer::All(), purpose, &range_proof_public_setup)
+        self.postmsg_mcast(key_mates.iter(), purpose, &range_proof_public_setup)
             .await
             .catch_()?;
-        let rgpsetup_ans_vec: SparseVec<ZkpPublicSetup> =
-            self.get_message(MpcPeer::All(), purpose).await.catch_()?;
+        let rgpsetup_ans_vec: SparseVec<ZkpPublicSetup> = self
+            .getmsg_mcast(key_mates.iter(), purpose)
+            .await
+            .catch_()?;
         let range_proof_public_setup_all_correct = rgpsetup_ans_vec
             .iter()
             .all(|(_id, pubsetup)| pubsetup.verify().is_ok());
@@ -148,12 +166,12 @@ impl AlgoKeygen for MpcMember {
             plkey_pf_send_vec
         };
         for (id, plpf) in plkey_pf_send_vec.iter() {
-            self.post_message(MpcPeer::Member(*id), purpose, plpf)
-                .await
-                .catch_()?;
+            self.postmsg_p2p(*id, purpose, plpf).await.catch_()?;
         }
-        let plkey_pf_rec_vec: SparseVec<PaillierKeyProofs> =
-            self.get_message(MpcPeer::All(), purpose).await.catch_()?;
+        let plkey_pf_rec_vec: SparseVec<PaillierKeyProofs> = self
+            .getmsg_mcast(key_mates.iter(), purpose)
+            .await
+            .catch_()?;
 
         let (
             (mut vss_scheme_inner, vss_scheme_outer),
@@ -165,7 +183,7 @@ impl AlgoKeygen for MpcMember {
                     threshold: group_config.threshold,
                     share_count: config.share_count,
                 }, config.clone()),
-                &decom_vec,
+                &_decom_vec,
                 &com_vec.values_sorted_by_key_asc(),
                 &plkey_pf_rec_vec.values_sorted_by_key_asc(),
                 &enc_keys.values_sorted_by_key_asc(),
@@ -181,33 +199,31 @@ impl AlgoKeygen for MpcMember {
         vss_scheme_inner.parameters.share_count = group_config.share_count;
 
         purpose = "exchange group key shares";
-        for id in self.attr_group_members() {
+        for id in group_mates.iter() {
             let key: Vec<u8> = enc_keys.get(id).unwrap().to_bytes();
             let unencrypted: Vec<u8> = secret_shares_inner.get(id).unwrap().to_bytes().to_vec();
             let aead: AEAD = aes_encrypt(&key, &unencrypted).catch_()?;
-            self.post_message(MpcPeer::Member(*id), purpose, &aead)
-                .await
-                .catch_()?;
+            self.postmsg_p2p(*id, purpose, &aead).await.catch_()?;
         }
         let share_inner_vec: SparseVec<AEAD> = self
-            .get_message(MpcPeer::Group(my_group_id), purpose)
+            .getmsg_mcast(group_mates.iter(), purpose)
             .await
             .catch_()?;
 
         purpose = "exchange all key shares";
-        for (mid, _gid) in self.attr_all_registered_members() {
+        for mid in key_mates.iter() {
             let key: Vec<u8> = enc_keys.get(mid).unwrap().to_bytes();
             let unencrypted: Vec<u8> = secret_shares_outer.get(mid).unwrap().to_bytes().to_vec();
             let aead: AEAD = aes_encrypt(&key, &unencrypted).catch_()?;
-            self.post_message(MpcPeer::Member(*mid), purpose, &aead)
-                .await
-                .catch_()?;
+            self.postmsg_p2p(*mid, purpose, &aead).await.catch_()?;
         }
-        let share_outer_vec: SparseVec<AEAD> =
-            self.get_message(MpcPeer::All(), purpose).await.catch_()?;
+        let share_outer_vec: SparseVec<AEAD> = self
+            .getmsg_mcast(key_mates.iter(), purpose)
+            .await
+            .catch_()?;
 
         let mut party_shares_inner: SparseVec<Scalar<Secp256k1>> = SparseVec::new();
-        for id in self.attr_group_members() {
+        for id in group_mates.iter() {
             if *id == my_id {
                 party_shares_inner.insert(*id, secret_shares_inner.get(id).ifnone_()?.clone());
             } else {
@@ -220,7 +236,7 @@ impl AlgoKeygen for MpcMember {
         }
 
         let mut party_shares_outer: SparseVec<Scalar<Secp256k1>> = SparseVec::new();
-        for (id, _gid) in self.attr_all_registered_members() {
+        for id in key_mates.iter() {
             if *id == my_id {
                 party_shares_outer.insert(*id, secret_shares_outer[id].clone());
             } else {
@@ -233,18 +249,22 @@ impl AlgoKeygen for MpcMember {
         }
 
         purpose = "exchange vss inner scheme";
-        self.post_message(MpcPeer::All(), purpose, &vss_scheme_inner)
+        self.postmsg_mcast(key_mates.iter(), purpose, &vss_scheme_inner)
             .await
             .catch_()?;
-        let vss_inner_vec: SparseVec<VerifiableSS<Secp256k1>> =
-            self.get_message(MpcPeer::All(), purpose).await.catch_()?;
+        let vss_inner_vec: SparseVec<VerifiableSS<Secp256k1>> = self
+            .getmsg_mcast(key_mates.iter(), purpose)
+            .await
+            .catch_()?;
 
         purpose = "exchange vss outer scheme";
-        self.post_message(MpcPeer::All(), purpose, &vss_scheme_outer)
+        self.postmsg_mcast(key_mates.iter(), purpose, &vss_scheme_outer)
             .await
             .catch_()?;
-        let vss_outer_vec: SparseVec<VerifiableSS<Secp256k1>> =
-            self.get_message(MpcPeer::All(), purpose).await.catch_()?;
+        let vss_outer_vec: SparseVec<VerifiableSS<Secp256k1>> = self
+            .getmsg_mcast(key_mates.iter(), purpose)
+            .await
+            .catch_()?;
 
         let _point_inner_vec = point_inner_vec.values_sorted_by_key_asc();
         let _point_outer_vec = point_outer_vec.values_sorted_by_key_asc();
@@ -276,13 +296,16 @@ impl AlgoKeygen for MpcMember {
         shared_keys.y = y_sum.clone();
 
         purpose = "exchange dlog proof";
-        self.post_message(MpcPeer::All(), purpose, &dlog_proof)
+        self.postmsg_mcast(key_mates.iter(), purpose, &dlog_proof)
             .await
             .catch_()?;
         let dlog_proof_vec: SparseVec<(
             DLogProof<Secp256k1, Sha256>,
             DLogProof<Secp256k1, Sha256>,
-        )> = self.get_message(MpcPeer::All(), purpose).await.catch_()?;
+        )> = self
+            .getmsg_mcast(key_mates.iter(), purpose)
+            .await
+            .catch_()?;
         Keys::verify_dlog_proofs(
             &config,
             dlog_proof_vec.values_sorted_by_key_asc().as_slice(),
@@ -311,7 +334,8 @@ impl AlgoKeygen for MpcMember {
                 }
                 paillier_keys
             },
-            key_arch: KeyArch::from(self.attr_session_config()),
+            dlog_stmt_vec: dlog_stmt_vec.clone(),
+            key_arch: KeyArch::default(),
             member_id: my_id,
         };
 
@@ -332,6 +356,7 @@ pub struct KeyStore {
     pub vss_inner_vec: SparseVec<VerifiableSS<Secp256k1>>,
     pub vss_outer_vec: SparseVec<VerifiableSS<Secp256k1>>,
     pub paillier_keys: SparseVec<EncryptionKey>,
+    pub dlog_stmt_vec: SparseVec<DLogStatement>,
 
     pub key_arch: KeyArch,
     pub member_id: usize,
@@ -371,7 +396,7 @@ impl KeyStore {
     }
 }
 
-#[derive(Clone, Serialize, Deserialize)]
+#[derive(Clone, Default, Serialize, Deserialize)]
 pub struct KeyArch {
     pub key_quorum: usize,
     pub groups: Vec<svarog_grpc::protogen::svarog::Group>,

@@ -1,5 +1,6 @@
 use std::collections::HashMap;
 pub type SparseVec<T> = HashMap<usize, T>;
+pub type SparseVecBatch<T> = HashMap<usize, Vec<T>>;
 
 pub trait ToVecByKeyOrder<T> {
     fn values_sorted_by_key_asc(&self) -> Vec<T>;
