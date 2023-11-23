@@ -15,6 +15,7 @@ pub struct MpcMember {
     pub member_id: usize,
     pub group_id: usize,
     pub member_attending: HashSet<usize>,
+    pub group_attending: HashMap<usize, HashSet<usize>>,
     pub member_group: HashMap<usize, usize>,
     pub group_member: HashMap<usize, HashSet<usize>>,
     pub group_quora: HashMap<usize, usize>,
@@ -36,15 +37,16 @@ pub enum MpcPeer<'a, C: IntoIterator<Item = usize>> {
 impl MpcMember {
     pub async fn new(grpc_hostport: &str) -> Outcome<Self> {
         Ok(MpcMember {
-            member_group: HashMap::new(),
+            member_id: 0,
+            group_id: 0,
             member_attending: HashSet::new(),
+            group_attending: HashMap::new(),
+            member_group: HashMap::new(),
             group_member: HashMap::new(),
             group_quora: HashMap::new(),
             key_quorum: 0,
             reshare_groups: HashSet::new(),
             reshare_members: HashSet::new(),
-            member_id: 0,
-            group_id: 0,
             mnem_provider_id: 0,
 
             session_id: "".to_string(),
@@ -84,6 +86,10 @@ impl MpcMember {
                     .insert(member_id as usize, group_id as usize);
                 if member.is_attending {
                     self.member_attending.insert(member_id as usize);
+                    self.group_attending
+                        .entry(group_id as usize)
+                        .or_insert(HashSet::new())
+                        .insert(member_id as usize);
                 }
                 self.group_member
                     .entry(group_id as usize)
