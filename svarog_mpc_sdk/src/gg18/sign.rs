@@ -21,9 +21,9 @@ use xuanmi_base_support::*;
 
 use super::*;
 use crate::{
+    mpc_member::*,
     mta::{MessageA, MessageB},
     util::*,
-    mpc_member::*,
 };
 
 #[async_trait]

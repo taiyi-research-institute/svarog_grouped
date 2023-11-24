@@ -3,6 +3,26 @@ name = "svarog_mpc_sdk"
 version = "0.1.0"
 edition = "2021"
 
+[[bin]]
+name = "keygen_main"
+path = "src/examples/keygen_main.rs"
+
+[[bin]]
+name = "sign_main"
+path = "src/examples/sign_main.rs"
+
+[[bin]]
+name = "reshare_main"
+path = "src/examples/reshare_main.rs"
+
+[[bin]]
+name = "keygen_mnem_main"
+path = "src/examples/keygen_mnem_main.rs"
+
+[[bin]]
+name = "new_session"
+path = "src/examples/new_session.rs"
+
 [dependencies]
 aes-gcm = { version = "0.9", features = ["std"] }
 anyhow = { version = "1.0", features = ["backtrace", "std"] }

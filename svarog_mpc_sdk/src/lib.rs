@@ -4,5 +4,3 @@ mod mta;
 mod paillier_proof;
 pub use mpc_member::*;
 mod util;
-
-fn main() {}

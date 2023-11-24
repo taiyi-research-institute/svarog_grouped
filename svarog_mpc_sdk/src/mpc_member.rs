@@ -59,6 +59,7 @@ impl MpcMember {
         let mut grpc_client = MpcSessionManagerClient::connect(self.grpc_hostport.to_owned())
             .await
             .catch_()?;
+        println!("[debug] fetch_session_config: {:?}", ses_id);
         let ses_config = grpc_client
             .get_session_config(SessionId {
                 session_id: ses_id.to_string(),

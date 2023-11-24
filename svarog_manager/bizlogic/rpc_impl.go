@@ -4,12 +4,14 @@ import (
 	"bytes"
 	"context"
 	"errors"
+	"fmt"
 	"sort"
 	"time"
 
-	proto "google.golang.org/protobuf/proto"
 	pb "svarog_manager/proto/gen"
 	util "svarog_manager/util"
+
+	proto "google.golang.org/protobuf/proto"
 )
 
 func (srv *SessionManager) NewSession(
@@ -239,7 +241,6 @@ func (srv *SessionManager) NewSession(
 		if req.ExpireAfterFinish == 0 {
 			req.ExpireAfterFinish = time.Now().Unix() + 86400
 		}
-		marshalled_tx_hashes, err := proto.Marshal(req.ToSign)
 		new_session := MpcSession{
 			SessionId:          req.SessionId,
 			SessionType:        req.SessionType,
@@ -247,11 +248,20 @@ func (srv *SessionManager) NewSession(
 			ReshareKeyQuorum:   req.ReshareKeyQuorum,
 			ExpireBeforeFinish: req.ExpireBeforeFinish,
 			ExpireAfterFinish:  req.ExpireAfterFinish,
-			MarshalledTxHashes: marshalled_tx_hashes,
 			Result:             make([]byte, 0),
-			DataCache:          make([]byte, 0),
 			TerminationHash:    make([]byte, 0),
 			Whistle:            "",
+		}
+		if req.SessionType == "sign" {
+			marshalled_tx_hashes, err := proto.Marshal(req.ToSign)
+			if err != nil {
+				tr.Rollback()
+				srv.Error(err)
+				return nil, err
+			}
+			new_session.MarshalledTxHashes = marshalled_tx_hashes
+		} else {
+			new_session.MarshalledTxHashes = make([]byte, 0)
 		}
 
 		err = tr.Create(&new_session).Error
@@ -461,6 +471,7 @@ func (srv *SessionManager) GetSessionConfig(
 ) (resp *pb.SessionConfig, err error) {
 	tr := srv.db.Begin()
 	resp = &pb.SessionConfig{}
+	fmt.Printf("GetSessionConfig: %s\n", req.SessionId)
 
 	var session *MpcSession
 	{ // get session from db
@@ -539,6 +550,7 @@ func (srv *SessionManager) GetSessionConfig(
 		resp.ReshareKeyQuorum = session.ReshareKeyQuorum
 		resp.ExpireBeforeFinish = session.ExpireBeforeFinish
 		resp.ExpireAfterFinish = session.ExpireAfterFinish
+		resp.ToSign = &pb.ToSign{}
 		err = proto.Unmarshal(session.Result, resp.ToSign)
 		if err != nil {
 			tr.Rollback()

@@ -64,19 +64,17 @@ func (srv *SessionManager) InitLogger(log_level, log_dir string) {
 // create in-memory file db.
 func (srv *SessionManager) InitDB() {
 	dbpath := "/dev/shm/svarog.db"
-	// err := os.Remove(dbpath)
-	// if err != nil && !os.IsNotExist(err) {
-	// 	panic(err)
-	// }
+	err := os.Remove(dbpath)
+	if err != nil && !os.IsNotExist(err) {
+		panic(err)
+	}
 
 	db, err := gorm.Open(sqlite.Open(dbpath), &gorm.Config{})
 	db.Exec("PRAGMA foreign_keys = ON")
-	db.AutoMigrate(
-		&MpcSession{},
-		&MpcGroup{},
-		&MpcMember{},
-		&MpcMessage{},
-	)
+	if err != nil {
+		panic(err)
+	}
+	db.Exec(sql_ddl)
 	if err != nil {
 		panic(err)
 	}

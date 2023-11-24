@@ -116,13 +116,9 @@ impl AlgoKeygenMnem for MpcMember {
                 let mut enc_outer = part_outer.to_bytes().as_ref().to_vec();
                 let aead_outer = aes_encrypt(&key, &enc_outer).catch_()?;
                 let aead_chain_code = aes_encrypt(&key, &chain_code).catch_()?;
-                self.postmsg_p2p(
-                    *id,
-                    purpose,
-                    &(aead_inner, aead_outer, aead_chain_code),
-                )
-                .await
-                .catch_()?;
+                self.postmsg_p2p(*id, purpose, &(aead_inner, aead_outer, aead_chain_code))
+                    .await
+                    .catch_()?;
             }
             party_keys.u_i.0 = partition.get(&my_id).unwrap().0.clone();
             party_keys.u_i.1 = partition.get(&my_id).unwrap().1.clone();
