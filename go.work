@@ -1,4 +1,0 @@
-go 1.21.1
-
-use ./svarog_manager
-use ./svarog_tests

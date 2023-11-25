@@ -12,6 +12,7 @@ import (
 	util "svarog_manager/util"
 
 	proto "google.golang.org/protobuf/proto"
+	"gorm.io/gorm"
 )
 
 func (srv *SessionManager) NewSession(
@@ -646,16 +647,14 @@ func (srv *SessionManager) GetMessage(
 			First(&msg).
 			Error
 		if err != nil {
-			srv.Error(err)
-			return nil, err
+			// Avoid spamming logs with "record not found" errors.
+			if !errors.Is(err, gorm.ErrRecordNotFound) {
+				srv.Error(err)
+				return nil, err
+			}
 		}
 		if msg == nil {
-			srv.Debugw("Message does not exist",
-				"SessionId", req.SessionId,
-				"MemberIdSrc", req.MemberIdSrc,
-				"MemberIdDst", req.MemberIdDst,
-				"Purpose", req.Purpose)
-			return nil, errors.New("Message does not exist")
+			resp.Body = make([]byte, 0)
 		}
 		resp.Body = msg.Body
 	}

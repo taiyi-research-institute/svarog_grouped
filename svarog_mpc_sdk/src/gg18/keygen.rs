@@ -18,7 +18,6 @@ use sha2::{Sha256, Sha512};
 use svarog_grpc::protogen::svarog::SessionConfig;
 use tonic::async_trait;
 use xuanmi_base_support::*;
-use zk_paillier::zkproofs::DLogStatement;
 
 use super::*;
 use crate::{mpc_member::*, util::*};
@@ -40,7 +39,8 @@ impl AlgoKeygen for MpcMember {
             res
         };
         let member_id_to_idx = {
-            let members: Vec<usize> = self.member_attending.iter().cloned().collect();
+            let mut members: Vec<usize> = self.member_attending.iter().cloned().collect();
+            members.sort();
             let mut res = SparseVec::new();
             for (idx, member_id) in members.iter().enumerate() {
                 res.insert(*member_id, idx);
@@ -70,6 +70,7 @@ impl AlgoKeygen for MpcMember {
             .getmsg_mcast(key_mates.iter(), purpose)
             .await
             .catch_()?;
+        assert_throw!(com_svec[&my_id].e == bc_i.e, "Broken message");
 
         purpose = "decom";
         self.postmsg_mcast(key_mates.iter(), purpose, &decom_i)
@@ -83,20 +84,22 @@ impl AlgoKeygen for MpcMember {
         let aeskey_svec: SparseVec<BigInt> = {
             let mut res = SparseVec::new();
             for (member_id, decom) in decom_svec.iter() {
-                let aeskey = &decom.y_i * &party_keys.u_i;
+                let aeskey = decom.y_i.clone() * party_keys.u_i.clone();
                 let aeskey = aeskey.x_coord().ifnone_()?;
                 res.insert(*member_id, aeskey);
             }
             res
         };
 
-        let y_sum = {
-            let mut y_sum: Point<Secp256k1> = Point::zero();
-            for decom in decom_svec.values() {
-                y_sum = y_sum + &decom.y_i;
+        let y_svec = {
+            let mut res = SparseVec::new();
+            for (member_id, decom) in decom_svec.iter() {
+                res.insert(*member_id, decom.y_i.clone());
             }
-            y_sum
+            res
         };
+
+        let y_sum: Point<Secp256k1> = y_svec.iter().fold(Point::zero(), |sum, (_, y)| sum + y);
 
         println!("Exchanged commitment to ephemeral public keys.");
 
@@ -157,11 +160,7 @@ impl AlgoKeygen for MpcMember {
 
         println!("Exchanged VSS commitments.");
 
-        let y_vec: Vec<Point<Secp256k1>> = decom_svec // y_i = decom_i.y_i
-            .values_sorted_by_key_asc()
-            .iter()
-            .map(|decom| decom.y_i.clone())
-            .collect();
+        let y_vec = y_svec.values_sorted_by_key_asc();
         let (shared_keys, dlog_proof) = party_keys
             .phase2_verify_vss_construct_keypair_phase3_pok_dlog(
                 &config,
