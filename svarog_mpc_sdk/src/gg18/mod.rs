@@ -21,16 +21,14 @@
 */
 
 mod keygen;
-use chrono::format;
+use itertools::izip;
 pub use keygen::*;
-mod keygen_mnem;
-pub use keygen_mnem::*;
-mod sign;
-pub use sign::*;
-mod hd;
-pub use hd::*;
-
-use std::convert::TryFrom;
+// mod keygen_mnem;
+// pub use keygen_mnem::*;
+// mod sign;
+// pub use sign::*;
+// mod hd;
+// pub use hd::*;
 
 // use centipede::juggling::proof_system::{Helgamalsegmented, Witness};
 // use centipede::juggling::segmentation::Msegmentation;
@@ -38,43 +36,40 @@ use aes_gcm::{
     aead::{Aead, NewAead, Payload},
     Aes256Gcm, Nonce,
 };
-use curv::{
-    arithmetic::traits::*,
-    cryptographic_primitives::{
-        commitments::{hash_commitment::HashCommitment, traits::Commitment},
-        hashing::{Digest, DigestExt},
-        proofs::{sigma_correct_homomorphic_elgamal_enc::*, sigma_dlog::DLogProof},
-        secret_sharing::feldman_vss::VerifiableSS,
-    },
-    elliptic::curves::{Curve, Point, Scalar, Secp256k1},
-    BigInt,
-};
+use rand_core::RngCore;
+use xuanmi_base_support::*;
+
+use centipede::juggling::proof_system::{Helgamalsegmented, Witness};
+use centipede::juggling::segmentation::Msegmentation;
+use curv::arithmetic::traits::*;
+use curv::cryptographic_primitives::commitments::hash_commitment::HashCommitment;
+use curv::cryptographic_primitives::commitments::traits::Commitment;
+use curv::cryptographic_primitives::hashing::{Digest, DigestExt};
+use curv::cryptographic_primitives::proofs::sigma_correct_homomorphic_elgamal_enc::*;
+use curv::cryptographic_primitives::proofs::sigma_dlog::DLogProof;
+use curv::cryptographic_primitives::secret_sharing::feldman_vss::VerifiableSS;
+use curv::elliptic::curves::{Curve, Point, Scalar, Secp256k1};
+use curv::BigInt;
 use paillier::{
     Decrypt, DecryptionKey, EncryptionKey, KeyGeneration, Paillier, RawCiphertext, RawPlaintext,
 };
-use rand_core::{OsRng, RngCore};
 use serde::{Deserialize, Serialize};
 use sha2::Sha256;
-use xuanmi_base_support::*;
-use zk_paillier::zkproofs::{DLogStatement, NiCorrectKeyProof};
-
-use super::paillier_proof::{NSFProof, PaillierBlumModProof};
+use std::convert::TryFrom;
+use zk_paillier::zkproofs::NiCorrectKeyProof;
 
 const SECURITY: usize = 256;
-const L: u32 = 256; // N0 = pq, where -sqrt(N0) * 2^l < p,q < sqrt(N0) * 2^l
 
-#[derive(Clone, Debug)]
+#[derive(Debug)]
 pub struct Parameters {
     pub threshold: u16,   //t
     pub share_count: u16, //n
 }
 
-// by default, share tuples are (inner, outer)
-// i.e., (inner_share, outer_share)
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct Keys<E: Curve = Secp256k1> {
-    pub u_i: (Scalar<E>, Scalar<E>),
-    pub y_i: (Point<E>, Point<E>), //g_u_i
+    pub u_i: Scalar<E>,
+    pub y_i: Point<E>,
     pub dk: DecryptionKey,
     pub ek: EncryptionKey,
     pub party_index: u16,
@@ -82,35 +77,28 @@ pub struct Keys<E: Curve = Secp256k1> {
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct PartyPrivate {
-    u_i: (Scalar<Secp256k1>, Scalar<Secp256k1>),
-    x_i: (Scalar<Secp256k1>, Scalar<Secp256k1>),
+    u_i: Scalar<Secp256k1>,
+    x_i: Scalar<Secp256k1>,
     dk: DecryptionKey,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct KeyGenBroadcastMessage1 {
     pub e: EncryptionKey,
-    pub com: (BigInt, BigInt),
-    // pub correct_key_proof: NiCorrectKeyProof,
+    pub com: BigInt,
+    pub correct_key_proof: NiCorrectKeyProof,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct KeyGenDecommitMessage1 {
-    pub blind_factor: (BigInt, BigInt),
-    pub y_i: (Point<Secp256k1>, Point<Secp256k1>),
-}
-
-#[derive(Clone, Debug, Serialize, Deserialize)]
-pub struct PaillierKeyProofs {
-    pub correct_key_proof: NiCorrectKeyProof,
-    pub pblum_modulus_proof: PaillierBlumModProof,
-    pub no_small_factor_proof: NSFProof,
+    pub blind_factor: BigInt,
+    pub y_i: Point<Secp256k1>,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct SharedKeys {
     pub y: Point<Secp256k1>,
-    pub x_i: (Scalar<Secp256k1>, Scalar<Secp256k1>),
+    pub x_i: Scalar<Secp256k1>,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -177,8 +165,8 @@ pub struct SignatureRecid {
 
 impl Keys {
     pub fn create(index: u16) -> Self {
-        let u = (Scalar::<Secp256k1>::random(), Scalar::<Secp256k1>::random());
-        let y = (Point::generator() * &u.0, Point::generator() * &u.1);
+        let u = Scalar::<Secp256k1>::random();
+        let y = Point::generator() * &u;
         let (ek, dk) = Paillier::keypair().keys();
 
         Self {
@@ -191,26 +179,11 @@ impl Keys {
     }
 
     // we recommend using safe primes if the code is used in production
-    pub fn create_with_safe_prime(index: u16) -> Keys {
-        let u = (Scalar::<Secp256k1>::random(), Scalar::<Secp256k1>::random());
-        let y = (Point::generator() * &u.0, Point::generator() * &u.1);
+    pub fn create_safe_prime(index: u16) -> Keys {
+        let u = Scalar::<Secp256k1>::random();
+        let y = Point::generator() * &u;
 
-        let (mut ek, mut dk) = Paillier::keypair_safe_primes().keys();
-        let mut bound = ek.n.sqrt() * BigInt::from(2).pow(L);
-        while dk.p <= -(&bound) || dk.p >= bound || dk.q <= -(&bound) || dk.q >= bound {
-            (ek, dk) = Paillier::keypair_safe_primes().keys();
-            bound = ek.n.sqrt() * BigInt::from(2).pow(L);
-        }
-
-        // // hardcoded for testing only
-        // let p_str = "228887768202115306593565368808592820237599162302790891136048210859700463168536347859891577256113351052877496083355171100730194866748253815965189419009447097559570228359696848947525043155201021818338978912026318620560515741646245029449014851622920104903693275061770186381936314279545231142191270874232085907767";
-        // let q_str = "117856446678054745990472425711910435781072493645370951370838434118297543700237047098408115413013509045457837730951824888879845476417708877498761573788305597382464330724492497557874169226512497782816524324645552982006382507540861532391525971690563763493899740442298815254333451503908665030820892318703151902127";
-        // let p = BigInt::from_str_radix(p_str, 10).unwrap();
-        // let q = BigInt::from_str_radix(q_str, 10).unwrap();
-        // let n = &p * &q;
-        // let nn = &n * &n;
-        // let ek = EncryptionKey { n, nn };
-        // let dk = DecryptionKey { p, q };
+        let (ek, dk) = Paillier::keypair_safe_primes().keys();
 
         Keys {
             u_i: u,
@@ -220,9 +193,8 @@ impl Keys {
             party_index: index,
         }
     }
-
-    pub fn create_from(u: (Scalar<Secp256k1>, Scalar<Secp256k1>), index: u16) -> Keys {
-        let y = (Point::generator() * &u.0, Point::generator() * &u.1);
+    pub fn create_from(u: Scalar<Secp256k1>, index: u16) -> Keys {
+        let y = Point::generator() * &u;
         let (ek, dk) = Paillier::keypair().keys();
 
         Self {
@@ -234,55 +206,19 @@ impl Keys {
         }
     }
 
-    pub fn create_from_with_safe_prime(
-        u: (Scalar<Secp256k1>, Scalar<Secp256k1>),
-        index: u16,
-    ) -> Keys {
-        let y = (Point::generator() * &u.0, Point::generator() * &u.1);
-
-        let (mut ek, mut dk) = Paillier::keypair_safe_primes().keys();
-        let mut bound = ek.n.sqrt() * BigInt::from(2).pow(L);
-        while dk.p <= -(&bound) || dk.p >= bound || dk.q <= -(&bound) || dk.q >= bound {
-            (ek, dk) = Paillier::keypair_safe_primes().keys();
-            bound = ek.n.sqrt() * BigInt::from(2).pow(L);
-        }
-
-        // // hardcoded for testing only
-        // let p_str = "228887768202115306593565368808592820237599162302790891136048210859700463168536347859891577256113351052877496083355171100730194866748253815965189419009447097559570228359696848947525043155201021818338978912026318620560515741646245029449014851622920104903693275061770186381936314279545231142191270874232085907767";
-        // let q_str = "117856446678054745990472425711910435781072493645370951370838434118297543700237047098408115413013509045457837730951824888879845476417708877498761573788305597382464330724492497557874169226512497782816524324645552982006382507540861532391525971690563763493899740442298815254333451503908665030820892318703151902127";
-        // let p = BigInt::from_str_radix(p_str, 10).unwrap();
-        // let q = BigInt::from_str_radix(q_str, 10).unwrap();
-        // let n = &p * &q;
-        // let nn = &n * &n;
-        // let ek = EncryptionKey { n, nn };
-        // let dk = DecryptionKey { p, q };
-
-        Self {
-            u_i: u,
-            y_i: y,
-            dk,
-            ek,
-            party_index: index,
-        }
-    }
-
-    pub fn phase1_com_decom(&self) -> (KeyGenBroadcastMessage1, KeyGenDecommitMessage1) {
-        let blind_factor = (BigInt::sample(SECURITY), BigInt::sample(SECURITY));
-        // let correct_key_proof = NiCorrectKeyProof::proof(&self.dk, None);
-        let com = (
-            HashCommitment::<Sha256>::create_commitment_with_user_defined_randomness(
-                &BigInt::from_bytes(self.y_i.0.to_bytes(true).as_ref()),
-                &blind_factor.0,
-            ),
-            HashCommitment::<Sha256>::create_commitment_with_user_defined_randomness(
-                &BigInt::from_bytes(self.y_i.1.to_bytes(true).as_ref()),
-                &blind_factor.1,
-            ),
+    pub fn phase1_broadcast_phase3_proof_of_correct_key(
+        &self,
+    ) -> (KeyGenBroadcastMessage1, KeyGenDecommitMessage1) {
+        let blind_factor = BigInt::sample(SECURITY);
+        let correct_key_proof = NiCorrectKeyProof::proof(&self.dk, None);
+        let com = HashCommitment::<Sha256>::create_commitment_with_user_defined_randomness(
+            &BigInt::from_bytes(self.y_i.to_bytes(true).as_ref()),
+            &blind_factor,
         );
         let bcm1 = KeyGenBroadcastMessage1 {
             e: self.ek.clone(),
             com,
-            // correct_key_proof,
+            correct_key_proof,
         };
         let decom1 = KeyGenDecommitMessage1 {
             blind_factor,
@@ -291,121 +227,59 @@ impl Keys {
         (bcm1, decom1)
     }
 
-    pub fn phase3_proof_of_correct_key(
-        &self,
-        nsf_setup: &DLogStatement,
-        binding: &BigInt,
-    ) -> PaillierKeyProofs {
-        let correct_key_proof = NiCorrectKeyProof::proof(&self.dk, None); // TODO: unnecessary?
-        let pblum_modulus_proof =
-            PaillierBlumModProof::generate(&self.ek.n, &self.dk, binding).unwrap();
-        let no_small_factor_proof = NSFProof::generate(&nsf_setup, &self.ek.n, &self.dk, "");
-
-        PaillierKeyProofs {
-            correct_key_proof,
-            pblum_modulus_proof,
-            no_small_factor_proof,
-        }
-    }
-
     #[allow(clippy::type_complexity)]
     pub fn phase1_verify_com_phase3_verify_correct_key_phase2_distribute(
         &self,
-        params: &(Parameters, Parameters),
+        params: &Parameters,
         decom_vec: &[KeyGenDecommitMessage1],
         bc1_vec: &[KeyGenBroadcastMessage1],
-        pproofs_vec: &[PaillierKeyProofs],
-        enc_keys: &[BigInt],
-        dlog_statement_vec: &[DLogStatement],
-    ) -> Outcome<(
-        (VerifiableSS<Secp256k1>, VerifiableSS<Secp256k1>),
-        (Vec<Scalar<Secp256k1>>, Vec<Scalar<Secp256k1>>),
-        u16,
-    )> {
+    ) -> Outcome<(VerifiableSS<Secp256k1>, Vec<Scalar<Secp256k1>>, u16)> {
         // test length:
-        assert_throw!(decom_vec.len() == usize::from(params.0.share_count));
-        assert_throw!(bc1_vec.len() == usize::from(params.0.share_count));
-        assert_throw!(pproofs_vec.len() == usize::from(params.0.share_count));
-        assert_throw!(enc_keys.len() == usize::from(params.0.share_count));
+        assert_throw!(decom_vec.len() == usize::from(params.share_count));
+        assert_throw!(bc1_vec.len() == usize::from(params.share_count));
 
         // test paillier correct key and test decommitments
         for i in 0..bc1_vec.len() {
-            let pred1 = (
-                HashCommitment::<Sha256>::create_commitment_with_user_defined_randomness(
-                    &BigInt::from_bytes(decom_vec[i].y_i.0.to_bytes(true).as_ref()),
-                    &decom_vec[i].blind_factor.0,
-                ),
-                HashCommitment::<Sha256>::create_commitment_with_user_defined_randomness(
-                    &BigInt::from_bytes(decom_vec[i].y_i.1.to_bytes(true).as_ref()),
-                    &decom_vec[i].blind_factor.1,
-                ),
-            ) == bc1_vec[i].com;
-            let pred2 = pproofs_vec[i]
+            bc1_vec[i]
                 .correct_key_proof
                 .verify(&bc1_vec[i].e, zk_paillier::zkproofs::SALT_STRING)
-                .is_ok();
-            let pred3 = pproofs_vec[i]
-                .pblum_modulus_proof
-                .verify(&bc1_vec[i].e.n, &enc_keys[i]);
-            let pred4 = pproofs_vec[i]
-                .no_small_factor_proof
-                .verify(&dlog_statement_vec[i], &bc1_vec[i].e.n);
-            assert_throw!(
-                pred1 && pred2 && pred3 && pred4,
-                &format!("({},{},{},{})", pred1, pred2, pred3, pred4)
-            );
+                .catch_()?;
+            let decom_correct =
+                HashCommitment::<Sha256>::create_commitment_with_user_defined_randomness(
+                    &BigInt::from_bytes(decom_vec[i].y_i.to_bytes(true).as_ref()),
+                    &decom_vec[i].blind_factor,
+                ) == bc1_vec[i].com;
+            assert_throw!(decom_correct);
         }
 
-        let (vss_scheme_inner, secret_shares_inner) =
-            VerifiableSS::share(params.0.threshold, params.0.share_count, &self.u_i.0);
-        let (vss_scheme_outer, secret_shares_outer) =
-            VerifiableSS::share(params.1.threshold, params.1.share_count, &self.u_i.1);
-        Ok((
-            (vss_scheme_inner, vss_scheme_outer),
-            (secret_shares_inner.to_vec(), secret_shares_outer.to_vec()),
-            self.party_index,
-        ))
+        let (vss_scheme, secret_shares) =
+            VerifiableSS::share(params.threshold, params.share_count, &self.u_i);
+        Ok((vss_scheme, secret_shares.to_vec(), self.party_index))
     }
 
     pub fn phase2_verify_vss_construct_keypair_phase3_pok_dlog(
         &self,
-        params: (&Parameters, &Parameters),
-        y_vec: (&[Point<Secp256k1>], &[Point<Secp256k1>]),
-        secret_shares_vec: (&[Scalar<Secp256k1>], &[Scalar<Secp256k1>]),
-        vss_scheme_vec: (&[VerifiableSS<Secp256k1>], &[VerifiableSS<Secp256k1>]),
+        params: &Parameters,
+        y_vec: &[Point<Secp256k1>],
+        secret_shares_vec: &[Scalar<Secp256k1>],
+        vss_scheme_vec: &[VerifiableSS<Secp256k1>],
         index: u16,
-    ) -> Outcome<(
-        SharedKeys,
-        (DLogProof<Secp256k1, Sha256>, DLogProof<Secp256k1, Sha256>),
-    )> {
-        assert_throw!(y_vec.0.len() == usize::from(params.0.share_count));
-        assert_throw!(secret_shares_vec.0.len() == usize::from(params.0.share_count));
-        assert_throw!(vss_scheme_vec.0.len() == usize::from(params.0.share_count));
-        assert_throw!(y_vec.1.len() == usize::from(params.1.share_count));
-        assert_throw!(secret_shares_vec.1.len() == usize::from(params.1.share_count));
-        assert_throw!(vss_scheme_vec.1.len() == usize::from(params.1.share_count));
+    ) -> Outcome<(SharedKeys, DLogProof<Secp256k1, Sha256>)> {
+        assert_throw!(y_vec.len() == usize::from(params.share_count));
+        assert_throw!(secret_shares_vec.len() == usize::from(params.share_count));
+        assert_throw!(vss_scheme_vec.len() == usize::from(params.share_count));
 
-        let correct_ss_verify_inner = (0..y_vec.0.len()).all(|i| {
-            vss_scheme_vec.0[i]
-                .validate_share(&secret_shares_vec.0[i], index)
-                .is_ok()
-                && vss_scheme_vec.0[i].commitments[0] == y_vec.0[i]
-        });
-        let correct_ss_verify_outer = (0..y_vec.1.len()).all(|i| {
-            vss_scheme_vec.1[i]
-                .validate_share(&secret_shares_vec.1[i], index)
-                .is_ok()
-                && vss_scheme_vec.1[i].commitments[0] == y_vec.1[i]
-        });
+        for i in 0..y_vec.len() {
+            assert_throw!(vss_scheme_vec[i].commitments[0] == y_vec[i]);
+            vss_scheme_vec[i]
+                .validate_share(&secret_shares_vec[i], index)
+                .map_err(|_| "ValidateShareError")
+                .catch_()?;
+        }
 
-        assert_throw!(correct_ss_verify_inner);
-        assert_throw!(correct_ss_verify_outer);
-        let y: Point<Secp256k1> = y_vec.1.iter().sum(); // anyway, y will be reassigned soon
-        let x_i: (Scalar<Secp256k1>, Scalar<Secp256k1>) = (
-            secret_shares_vec.0.iter().sum(),
-            secret_shares_vec.1.iter().sum(),
-        );
-        let dlog_proof = (DLogProof::prove(&x_i.0), DLogProof::prove(&x_i.1));
+        let y: Point<Secp256k1> = y_vec.iter().sum();
+        let x_i: Scalar<Secp256k1> = secret_shares_vec.iter().sum();
+        let dlog_proof = DLogProof::prove(&x_i);
         Ok((SharedKeys { y, x_i }, dlog_proof))
     }
 
@@ -435,19 +309,16 @@ impl Keys {
 
     pub fn verify_dlog_proofs(
         params: &Parameters,
-        dlog_proofs_vec: &[(DLogProof<Secp256k1, Sha256>, DLogProof<Secp256k1, Sha256>)],
-        y_vec: (&[Point<Secp256k1>], &[Point<Secp256k1>]),
+        dlog_proofs_vec: &[DLogProof<Secp256k1, Sha256>],
+        y_vec: &[Point<Secp256k1>],
     ) -> Outcome<()> {
-        assert_throw!(y_vec.0.len() == usize::from(params.share_count)); // or y_vec.1.len()
+        assert_throw!(y_vec.len() == usize::from(params.share_count));
         assert_throw!(dlog_proofs_vec.len() == usize::from(params.share_count));
 
-        let xi_dlog_verify_inner =
-            (0..y_vec.0.len()).all(|i| DLogProof::verify(&dlog_proofs_vec[i].0).is_ok());
-        let xi_dlog_verify_outer =
-            (0..y_vec.1.len()).all(|i| DLogProof::verify(&dlog_proofs_vec[i].1).is_ok());
+        for d in dlog_proofs_vec.iter() {
+            DLogProof::verify(d).catch_()?;
+        }
 
-        assert_throw!(xi_dlog_verify_inner, "InvalidKey");
-        assert_throw!(xi_dlog_verify_outer, "InvalidKey");
         Ok(())
     }
 }
@@ -461,56 +332,53 @@ impl PartyPrivate {
         }
     }
 
-    pub fn y_i(&self) -> (Point<Secp256k1>, Point<Secp256k1>) {
-        (
-            Point::generator() * &self.u_i.0,
-            Point::generator() * &self.u_i.1,
-        )
+    pub fn y_i(&self) -> Point<Secp256k1> {
+        Point::generator() * &self.u_i
     }
 
     pub fn decrypt(&self, ciphertext: BigInt) -> RawPlaintext {
         Paillier::decrypt(&self.dk, &RawCiphertext::from(ciphertext))
     }
 
-    // pub fn refresh_private_key(&self, factor: &Scalar<Secp256k1>, index: u16) -> Keys {
-    //     let u: Scalar<Secp256k1> = &self.u_i + factor;
-    //     let y = Point::generator() * &u;
-    //     let (ek, dk) = Paillier::keypair().keys();
+    pub fn refresh_private_key(&self, factor: &Scalar<Secp256k1>, index: u16) -> Keys {
+        let u: Scalar<Secp256k1> = &self.u_i + factor;
+        let y = Point::generator() * &u;
+        let (ek, dk) = Paillier::keypair().keys();
 
-    //     Keys {
-    //         u_i: u,
-    //         y_i: y,
-    //         dk,
-    //         ek,
-    //         party_index: index,
-    //     }
-    // }
+        Keys {
+            u_i: u,
+            y_i: y,
+            dk,
+            ek,
+            party_index: index,
+        }
+    }
 
-    // // we recommend using safe primes if the code is used in production
-    // pub fn refresh_private_key_safe_prime(&self, factor: &Scalar<Secp256k1>, index: u16) -> Keys {
-    //     let u: Scalar<Secp256k1> = &self.u_i + factor;
-    //     let y = Point::generator() * &u;
-    //     let (ek, dk) = Paillier::keypair_safe_primes().keys();
+    // we recommend using safe primes if the code is used in production
+    pub fn refresh_private_key_safe_prime(&self, factor: &Scalar<Secp256k1>, index: u16) -> Keys {
+        let u: Scalar<Secp256k1> = &self.u_i + factor;
+        let y = Point::generator() * &u;
+        let (ek, dk) = Paillier::keypair_safe_primes().keys();
 
-    //     Keys {
-    //         u_i: u,
-    //         y_i: y,
-    //         dk,
-    //         ek,
-    //         party_index: index,
-    //     }
-    // }
+        Keys {
+            u_i: u,
+            y_i: y,
+            dk,
+            ek,
+            party_index: index,
+        }
+    }
 
-    // // used for verifiable recovery
-    // pub fn to_encrypted_segment(
-    //     &self,
-    //     segment_size: usize,
-    //     num_of_segments: usize,
-    //     pub_ke_y: &Point<Secp256k1>,
-    //     g: &Point<Secp256k1>,
-    // ) -> (Witness, Helgamalsegmented) {
-    //     Msegmentation::to_encrypted_segments(&self.u_i, &segment_size, num_of_segments, pub_ke_y, g)
-    // }
+    // used for verifiable recovery
+    pub fn to_encrypted_segment(
+        &self,
+        segment_size: usize,
+        num_of_segments: usize,
+        pub_ke_y: &Point<Secp256k1>,
+        g: &Point<Secp256k1>,
+    ) -> (Witness, Helgamalsegmented) {
+        Msegmentation::to_encrypted_segments(&self.u_i, &segment_size, num_of_segments, pub_ke_y, g)
+    }
 
     pub fn update_private_key(
         &self,
@@ -518,8 +386,8 @@ impl PartyPrivate {
         factor_x_i: &Scalar<Secp256k1>,
     ) -> Self {
         PartyPrivate {
-            u_i: (self.u_i.0.clone(), &self.u_i.1 + factor_u_i),
-            x_i: (self.x_i.0.clone(), &self.x_i.1 + factor_x_i),
+            u_i: &self.u_i + factor_u_i,
+            x_i: &self.x_i + factor_x_i,
             dk: self.dk.clone(),
         }
     }
@@ -528,24 +396,17 @@ impl PartyPrivate {
 impl SignKeys {
     pub fn create(
         private: &PartyPrivate,
-        vss_scheme: (&VerifiableSS<Secp256k1>, &VerifiableSS<Secp256k1>),
+        vss_scheme: &VerifiableSS<Secp256k1>,
         index: u16,
-        s: (&[u16], &[u16]),
+        s: &[u16],
     ) -> Self {
-        let li_inner = VerifiableSS::<Secp256k1>::map_share_to_new_params(
-            &vss_scheme.0.parameters,
-            index,
-            s.0,
-        );
-        let li_outer = VerifiableSS::<Secp256k1>::map_share_to_new_params(
-            &vss_scheme.1.parameters,
-            index,
-            s.1,
-        );
-        let w_i = li_inner * &private.x_i.0 + li_outer * &private.x_i.1;
-        let g_w_i = Point::generator() * &w_i;
+        let li =
+            VerifiableSS::<Secp256k1>::map_share_to_new_params(&vss_scheme.parameters, index, s);
+        let w_i = li * &private.x_i;
+        let g = Point::generator();
+        let g_w_i = g * &w_i;
         let gamma_i = Scalar::<Secp256k1>::random();
-        let g_gamma_i = Point::generator() * &gamma_i;
+        let g_gamma_i = g * &gamma_i;
 
         Self {
             w_i,
@@ -558,7 +419,8 @@ impl SignKeys {
 
     pub fn phase1_broadcast(&self) -> (SignBroadcastPhase1, SignDecommitPhase1) {
         let blind_factor = BigInt::sample(SECURITY);
-        let g_gamma_i = Point::generator() * &self.gamma_i;
+        let g = Point::generator();
+        let g_gamma_i = g * &self.gamma_i;
         let com = HashCommitment::<Sha256>::create_commitment_with_user_defined_randomness(
             &BigInt::from_bytes(g_gamma_i.to_bytes(true).as_ref()),
             &blind_factor,
@@ -608,22 +470,30 @@ impl SignKeys {
         bc1_vec: &[SignBroadcastPhase1],
     ) -> Outcome<Point<Secp256k1>> {
         // note: b_proof_vec is populated using the results
-        // from the MtAwc, which is handling the proof of knowledge verification of gamma_i such that
-        // Gamme_i = gamma_i * G in the verify_proofs_get_alpha()
-        let test_b_vec_and_com = (0..b_proof_vec.len()).all(|i| {
-            b_proof_vec[i].pk == phase1_decommit_vec[i].g_gamma_i
-                && HashCommitment::<Sha256>::create_commitment_with_user_defined_randomness(
+        //// from the MtAwc, which is handling the proof of knowledge verification of gamma_i such that
+        //// Gamme_i = gamma_i * G in the verify_proofs_get_alpha()
+        assert_throw!(b_proof_vec.len() == phase1_decommit_vec.len());
+        assert_throw!(b_proof_vec.len() == bc1_vec.len());
+
+        for i in 0..b_proof_vec.len() {
+            let b_proof = b_proof_vec[i];
+            let p1decom = &phase1_decommit_vec[i];
+            let bc1 = &bc1_vec[i];
+            assert_throw!(b_proof.pk == p1decom.g_gamma_i);
+            let hash_commitment =
+                HashCommitment::<Sha256>::create_commitment_with_user_defined_randomness(
                     &BigInt::from_bytes(phase1_decommit_vec[i].g_gamma_i.to_bytes(true).as_ref()),
                     &phase1_decommit_vec[i].blind_factor,
-                ) == bc1_vec[i].com
-        });
+                );
+            assert_throw!(hash_commitment == bc1.com);
+        }
 
-        assert_throw!(test_b_vec_and_com, "InvalidKey");
         let gamma_sum: Point<Secp256k1> = phase1_decommit_vec
             .iter()
             .map(|decom| &decom.g_gamma_i)
             .sum();
-        Ok(gamma_sum * delta_inv)
+
+        Ok(gamma_sum * delta_inv) // R
     }
 }
 
@@ -711,29 +581,36 @@ impl LocalSignature {
         v_i: &Point<Secp256k1>,
         R: &Point<Secp256k1>,
     ) -> Outcome<(Phase5Com2, Phase5DDecom2)> {
-        assert_eq!(decom_vec.len(), com_vec.len());
+        assert_throw!(decom_vec.len() == com_vec.len());
+        assert_throw!(decom_vec.len() == elgamal_proofs.len());
+        assert_throw!(decom_vec.len() == dlog_proofs_rho.len());
 
         let g = Point::generator();
-        let test_com_elgamal = (0..com_vec.len()).all(|i| {
+        for i in 0..decom_vec.len() {
+            let decom = &decom_vec[i];
+            let com = &com_vec[i];
+            let elgamal_proof = &elgamal_proofs[i];
+            let dlog_proof_rho = &dlog_proofs_rho[i];
+
             let delta = HomoElGamalStatement {
-                G: decom_vec[i].A_i.clone(),
+                G: decom.A_i.clone(),
                 H: R.clone(),
                 Y: g.to_point(),
-                D: decom_vec[i].V_i.clone(),
-                E: decom_vec[i].B_i.clone(),
+                D: decom.V_i.clone(),
+                E: decom.B_i.clone(),
             };
-
             let input_hash = Sha256::new()
-                .chain_points([&decom_vec[i].V_i, &decom_vec[i].A_i, &decom_vec[i].B_i])
+                .chain_points([&decom.V_i, &decom.A_i, &decom.B_i])
                 .result_bigint();
-
-            HashCommitment::<Sha256>::create_commitment_with_user_defined_randomness(
-                &input_hash,
-                &decom_vec[i].blind_factor,
-            ) == com_vec[i].com
-                && elgamal_proofs[i].verify(&delta).is_ok()
-                && DLogProof::verify(&dlog_proofs_rho[i]).is_ok()
-        });
+            let hash_commitment =
+                HashCommitment::<Sha256>::create_commitment_with_user_defined_randomness(
+                    &input_hash,
+                    &decom_vec[i].blind_factor,
+                );
+            assert_throw!(hash_commitment == com.com);
+            elgamal_proof.verify(&delta).catch_()?;
+            DLogProof::verify(dlog_proof_rho).catch_()?;
+        }
 
         let v_iter = (0..com_vec.len()).map(|i| &decom_vec[i].V_i);
         let a_iter = (0..com_vec.len()).map(|i| &decom_vec[i].A_i);
@@ -746,7 +623,7 @@ impl LocalSignature {
             &self
                 .R
                 .x_coord()
-                .ifnone("InvalidSig", "")?
+                .ifnone_()?
                 .mod_floor(Scalar::<Secp256k1>::group_order()),
         );
         let yr = &self.y * r;
@@ -762,8 +639,6 @@ impl LocalSignature {
             &input_hash,
             &blind_factor,
         );
-
-        assert_throw!(test_com_elgamal, "InvalidCom");
 
         Ok((
             Phase5Com2 { com },
@@ -784,15 +659,17 @@ impl LocalSignature {
         assert_throw!(decom_vec2.len() == decom_vec1.len());
         assert_throw!(decom_vec2.len() == com_vec2.len());
 
-        let test_com = (0..com_vec2.len()).all(|i| {
+        for (decom2, com2) in izip!(decom_vec2, com_vec2) {
             let input_hash = Sha256::new()
-                .chain_points([&decom_vec2[i].u_i, &decom_vec2[i].t_i])
+                .chain_points([&decom2.u_i, &decom2.t_i])
                 .result_bigint();
-            HashCommitment::<Sha256>::create_commitment_with_user_defined_randomness(
-                &input_hash,
-                &decom_vec2[i].blind_factor,
-            ) == com_vec2[i].com
-        });
+            let hash_commitment =
+                HashCommitment::<Sha256>::create_commitment_with_user_defined_randomness(
+                    &input_hash,
+                    &decom2.blind_factor,
+                );
+            assert_throw!(hash_commitment == com2.com, "invalid com");
+        }
 
         let t_iter = decom_vec2.iter().map(|decom| &decom.t_i);
         let u_iter = decom_vec2.iter().map(|decom| &decom.u_i);
@@ -801,8 +678,8 @@ impl LocalSignature {
         let g = Point::generator();
         let biased_sum_tb = g + t_iter.chain(b_iter).sum::<Point<Secp256k1>>();
         let biased_sum_tb_minus_u = biased_sum_tb - u_iter.sum::<Point<Secp256k1>>();
-        assert_throw!(test_com, "InvalidCom");
-        assert_throw!(*g.as_point() == biased_sum_tb_minus_u, "InvalidKey");
+
+        assert_throw!(*g.as_point() == biased_sum_tb_minus_u, "invalid key");
         Ok(self.s_i.clone())
     }
 
@@ -814,13 +691,13 @@ impl LocalSignature {
             &self
                 .R
                 .x_coord()
-                .ifnone("InvalidSig", "")?
+                .ifnone_()?
                 .mod_floor(Scalar::<Secp256k1>::group_order()),
         );
         let ry: BigInt = self
             .R
             .y_coord()
-            .ifnone("InvalidSig", "")?
+            .ifnone_()?
             .mod_floor(Scalar::<Secp256k1>::group_order());
 
         /*
@@ -837,54 +714,31 @@ impl LocalSignature {
             recid ^= 1;
         }
         let sig = SignatureRecid { r, s, recid };
-        let std_verified = std_verify(&sig, &self.y, &self.m).is_ok();
-        assert_throw!(std_verified, "InvalidSig");
+        verify(&sig, &self.y, &self.m).catch_()?;
         Ok(sig)
     }
 }
 
-// pub fn std_verify(
-//     sig: &SignatureRecid,
-//     y: &Point<Secp256k1>,
-//     message: &BigInt,
-// ) -> Result<(), Error> {
-//     let b = sig.s.invert().ok_or(Error::InvalidSig)?;
-//     let a = Scalar::<Secp256k1>::from(message);
-//     let u1 = a * &b;
-//     let u2 = &sig.r * &b;
+pub fn verify(sig: &SignatureRecid, y: &Point<Secp256k1>, message: &BigInt) -> Outcome<()> {
+    let b = sig.s.invert().ifnone_()?;
+    let a = Scalar::<Secp256k1>::from(message);
+    let u1 = a * &b;
+    let u2 = &sig.r * &b;
 
-//     let g = Point::generator();
-//     let gu1 = g * u1;
-//     let yu2 = y * &u2;
-//     // can be faster using shamir trick
+    let g = Point::generator();
+    let gu1 = g * u1;
+    let yu2 = y * &u2;
+    // can be faster using shamir trick
 
-//     if sig.r
-//         == Scalar::<Secp256k1>::from(
-//             &(gu1 + yu2)
-//                 .x_coord()
-//                 .ok_or(Error::InvalidSig)?
-//                 .mod_floor(Scalar::<Secp256k1>::group_order()),
-//         )
-//     {
-//         Ok(())
-//     } else {
-//         Err(InvalidSig)
-//     }
-// }
-
-pub fn std_verify(sig: &SignatureRecid, pk: &Point<Secp256k1>, msg: &BigInt) -> Outcome<()> {
-    // input parameter msg is a hashed value of the raw message to be signed
-    let s_inv: Scalar<Secp256k1> = sig
-        .s
-        .invert()
-        .unwrap_or_else(|| Scalar::<Secp256k1>::zero());
-    let r_prime = (&s_inv * &Scalar::<Secp256k1>::from_bigint(&msg)) * Point::generator()
-        + (&sig.r * &s_inv) * pk;
-    if r_prime.x_coord().unwrap_or_else(|| BigInt::from(0u16)) == sig.r.to_bigint() {
-        Ok(())
-    } else {
-        throw!("InvalidSig", "");
-    }
+    let verification = sig.r
+        == Scalar::<Secp256k1>::from(
+            &(gu1 + yu2)
+                .x_coord()
+                .ifnone_()?
+                .mod_floor(Scalar::<Secp256k1>::group_order()),
+        );
+    assert_throw!(verification, "invalid signature");
+    Ok(())
 }
 
 #[derive(Clone, PartialEq, Debug, Serialize, Deserialize)]
@@ -902,7 +756,7 @@ pub fn aes_encrypt(key: &[u8], plaintext: &[u8]) -> Outcome<AEAD> {
 
     let mut _buf = [0u8; 12];
     let nonce = {
-        OsRng.fill_bytes(&mut _buf); // provided by Rng trait
+        rand::rngs::OsRng.fill_bytes(&mut _buf); // provided by Rng trait
         Nonce::from_slice(_buf.as_slice())
     };
 
