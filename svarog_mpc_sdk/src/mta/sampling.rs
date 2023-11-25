@@ -10,7 +10,6 @@ use curv::{
     arithmetic::{traits::Samplable, Integer, Modulo, One, Zero},
     BigInt,
 };
-use std::borrow::Borrow;
 
 /// Finds a generator of  a cyclic group of order n
 /// using known factorization of n.
@@ -41,11 +40,11 @@ pub fn crt_solver(reminders: &[&BigInt], moduli: &[&BigInt]) -> BigInt {
     let n = moduli.iter().fold(BigInt::one(), |x, &ni| x * ni);
     let mut result = BigInt::zero();
     for (&ai, &ni) in reminders.iter().zip(moduli) {
-        let Ni: BigInt = n.borrow() / ni;
+        let Ni: BigInt = &n / ni;
         let Mi: BigInt = BigInt::mod_inv(&Ni, &ni).unwrap();
-        result += (ai * Ni * Mi) % n.borrow();
+        result += (ai * Ni * Mi) % &n;
     }
-    result % n
+    result % &n
 }
 
 /// Samples a generator from RSA group modulo product of two safe primes

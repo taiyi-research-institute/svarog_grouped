@@ -21,6 +21,7 @@
 */
 
 mod keygen;
+use chrono::format;
 pub use keygen::*;
 mod keygen_mnem;
 pub use keygen_mnem::*;
@@ -326,7 +327,34 @@ impl Keys {
         assert_throw!(bc1_vec.len() == usize::from(params.0.share_count));
         assert_throw!(pproofs_vec.len() == usize::from(params.0.share_count));
         assert_throw!(enc_keys.len() == usize::from(params.0.share_count));
+
         // test paillier correct key and test decommitments
+        for i in 0..bc1_vec.len() {
+            let pred1 = (
+                HashCommitment::<Sha256>::create_commitment_with_user_defined_randomness(
+                    &BigInt::from_bytes(decom_vec[i].y_i.0.to_bytes(true).as_ref()),
+                    &decom_vec[i].blind_factor.0,
+                ),
+                HashCommitment::<Sha256>::create_commitment_with_user_defined_randomness(
+                    &BigInt::from_bytes(decom_vec[i].y_i.1.to_bytes(true).as_ref()),
+                    &decom_vec[i].blind_factor.1,
+                ),
+            ) == bc1_vec[i].com;
+            let pred2 = pproofs_vec[i]
+                .correct_key_proof
+                .verify(&bc1_vec[i].e, zk_paillier::zkproofs::SALT_STRING)
+                .is_ok();
+            let pred3 = pproofs_vec[i]
+                .pblum_modulus_proof
+                .verify(&bc1_vec[i].e.n, &enc_keys[i]);
+            let pred4 = pproofs_vec[i]
+                .no_small_factor_proof
+                .verify(&dlog_statement_vec[i], &bc1_vec[i].e.n);
+            assert_throw!(
+                pred1 && pred2 && pred3 && pred4,
+                &format!("({},{},{},{})", pred1, pred2, pred3, pred4)
+            );
+        }
         let correct_key_correct_decom_all = (0..bc1_vec.len()).all(|i| {
             (
                 HashCommitment::<Sha256>::create_commitment_with_user_defined_randomness(
@@ -349,12 +377,12 @@ impl Keys {
                     .no_small_factor_proof
                     .verify(&dlog_statement_vec[i], &bc1_vec[i].e.n)
         });
+        assert_throw!(correct_key_correct_decom_all);
 
         let (vss_scheme_inner, secret_shares_inner) =
             VerifiableSS::share(params.0.threshold, params.0.share_count, &self.u_i.0);
         let (vss_scheme_outer, secret_shares_outer) =
             VerifiableSS::share(params.1.threshold, params.1.share_count, &self.u_i.1);
-        assert_throw!(correct_key_correct_decom_all);
         Ok((
             (vss_scheme_inner, vss_scheme_outer),
             (secret_shares_inner.to_vec(), secret_shares_outer.to_vec()),

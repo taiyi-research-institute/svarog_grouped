@@ -126,9 +126,10 @@ pub fn check_divisibility(n: &BigInt) -> Outcome<()> {
     // let alpha_primorial = BigInt::from_str_radix(primorial, 10u8).unwrap();
     let alpha_primorial = BigInt::from_str_radix(P, 10u8).unwrap();
     let gcd_test = alpha_primorial.gcd(&n);
-    assert_throw!(gcd_test != BigInt::one(), "NIZKError.FailedProof");
+    assert_throw!(gcd_test == BigInt::one(), "NIZKError.FailedProof");
     Ok(())
 }
+
 /// produces the hash value of the concatenation of `BigInt` numbers
 fn hash(bigints: &[&BigInt]) -> BigInt {
     HSha512Trunc256::create_hash(bigints)

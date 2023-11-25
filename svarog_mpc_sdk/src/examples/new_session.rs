@@ -63,11 +63,6 @@ fn init_keygen_config() -> SessionConfig {
         member_id: 0,
         is_attending: true,
     });
-    group_halogen.members.push(Member {
-        member_name: "iodine".to_owned(),
-        member_id: 0,
-        is_attending: true,
-    });
     conf.groups.push(group_halogen);
 
     let mut group_noble_gas = Group::default();
@@ -88,37 +83,7 @@ fn init_keygen_config() -> SessionConfig {
         member_id: 0,
         is_attending: true,
     });
-    group_noble_gas.members.push(Member {
-        member_name: "krypton".to_owned(),
-        member_id: 0,
-        is_attending: true,
-    });
     conf.groups.push(group_noble_gas);
-
-    let mut group_pgm = Group::default();
-    group_pgm.group_name = "pgm".to_owned();
-    group_pgm.group_quorum = 2;
-    group_pgm.members.push(Member {
-        member_name: "platinum".to_owned(),
-        member_id: 0,
-        is_attending: true,
-    });
-    group_pgm.members.push(Member {
-        member_name: "palladium".to_owned(),
-        member_id: 0,
-        is_attending: true,
-    });
-    group_pgm.members.push(Member {
-        member_name: "iridium".to_owned(),
-        member_id: 0,
-        is_attending: true,
-    });
-    group_pgm.members.push(Member {
-        member_name: "osmium".to_owned(),
-        member_id: 0,
-        is_attending: true,
-    });
-    conf.groups.push(group_pgm);
 
     conf
 }

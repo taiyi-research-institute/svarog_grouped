@@ -28,9 +28,9 @@ pub struct AssocValues {
 
 impl PaillierBlumModProof {
     pub fn generate(N: &BigInt, dk: &DecryptionKey, binding: &BigInt) -> Outcome<Self> {
-        let setup_check = *N != &dk.p * &dk.q
-            || dk.p.modulus(&BigInt::from(4)) != BigInt::from(3)
-            || dk.q.modulus(&BigInt::from(4)) != BigInt::from(3);
+        let setup_check = *N == &dk.p * &dk.q
+            && dk.p.modulus(&BigInt::from(4)) == BigInt::from(3)
+            && dk.q.modulus(&BigInt::from(4)) == BigInt::from(3);
         assert_throw!(setup_check, "PaillierProofError.InvalidSetup");
 
         let mut w = BigInt::sample_below(N);

@@ -18,7 +18,7 @@ func (srv *SessionManager) NewSession(
 	ctx context.Context,
 	req *pb.SessionConfig,
 ) (resp *pb.SessionConfig, err error) {
-	tr := srv.db.Begin()
+	db := srv.db
 	resp = req
 
 	{ // Validate the request
@@ -26,7 +26,6 @@ func (srv *SessionManager) NewSession(
 			req.SessionType == "sign" ||
 			req.SessionType == "reshare"
 		if !assert_sestype {
-			tr.Rollback()
 			return nil, errors.New("Invalid session type")
 		}
 
@@ -35,32 +34,26 @@ func (srv *SessionManager) NewSession(
 			_groups := make(map[string]bool)
 			for _, group := range req.Groups {
 				if group.IsReshare { // No group is reshare.
-					tr.Rollback()
 					return nil, errors.New("Any keygen group should not reshare")
 				}
 				if _groups[group.GroupName] { // Every group is unique.
-					tr.Rollback()
 					return nil, errors.New("Every keygen group should be unique")
 				}
 				_groups[group.GroupName] = true
 				for _, member := range group.Members {
 					if _members[member.MemberName] { // Every member is unique.
-						tr.Rollback()
 						return nil, errors.New("Every keygen member should be unique")
 					}
 					_members[member.MemberName] = true
 					if !member.IsAttending { // Every member is attending.
-						tr.Rollback()
 						return nil, errors.New("Every keygen member should attend")
 					}
 				}
 			}
 			if len(_groups) < 1 { // At least one group.
-				tr.Rollback()
 				return nil, errors.New("At least one keygen group is required")
 			}
 			if len(_members) < 1 { // At least two members.
-				tr.Rollback()
 				return nil, errors.New("At lest one keygen members is required")
 			}
 		} else if req.SessionType == "sign" {
@@ -72,18 +65,15 @@ func (srv *SessionManager) NewSession(
 			_kq := req.KeyQuorum
 			for _, group := range req.Groups {
 				if group.IsReshare { // No group is reshare.
-					tr.Rollback()
 					return nil, errors.New("Any sign group should not reshare")
 				}
 				if _groups[group.GroupName] { // Every group is unique.
-					tr.Rollback()
 					return nil, errors.New("Every sign group should be unique")
 				}
 				_groups[group.GroupName] = true
 				_gq[group.GroupName] = group.GroupQuorum
 				for _, member := range group.Members {
 					if _cdd[member.MemberName] { // Every member is unique.
-						tr.Rollback()
 						return nil, errors.New("Every sign candidate should be unique")
 					}
 					_cdd[member.MemberName] = true
@@ -94,20 +84,16 @@ func (srv *SessionManager) NewSession(
 				}
 			}
 			if len(_groups) < 1 { // At least one group.
-				tr.Rollback()
 				return nil, errors.New("At least one sign group is required")
 			}
 			if len(_cdd) < 1 { // At least two members.
-				tr.Rollback()
 				return nil, errors.New("At lest one sign candidate is required")
 			}
 			if _katt < _kq { // Key quorum is satisfied.
-				tr.Rollback()
 				return nil, errors.New("Key quorum is not satisfied")
 			}
 			for _, group := range req.Groups {
 				if _gatt[group.GroupName] < _gq[group.GroupName] {
-					tr.Rollback()
 					return nil, errors.New("Group quorum is not satisfied")
 				}
 			}
@@ -124,14 +110,13 @@ func (srv *SessionManager) NewSession(
 						continue
 					}
 					if _groups[group.GroupName] { // Every group is unique.
-						tr.Rollback()
+
 						return nil, errors.New("Every non-reshare group should be unique")
 					}
 					_groups[group.GroupName] = true
 					_gq[group.GroupName] = group.GroupQuorum
 					for _, member := range group.Members {
 						if _cdd[member.MemberName] { // Every member is unique.
-							tr.Rollback()
 							return nil, errors.New("Every non-reshare candidate should be unique")
 						}
 						_cdd[member.MemberName] = true
@@ -142,20 +127,16 @@ func (srv *SessionManager) NewSession(
 					}
 				}
 				if len(_groups) < 1 { // At least one group.
-					tr.Rollback()
 					return nil, errors.New("At least one non-reshare group is required")
 				}
 				if len(_cdd) < 1 { // At least two members.
-					tr.Rollback()
 					return nil, errors.New("At lest one non-reshare candidate is required")
 				}
 				if _katt < _kq { // Key quorum is satisfied.
-					tr.Rollback()
 					return nil, errors.New("Non-reshare key quorum is not satisfied")
 				}
 				for _, group := range req.Groups {
 					if _gatt[group.GroupName] < _gq[group.GroupName] {
-						tr.Rollback()
 						return nil, errors.New("Non-reshare group quorum is not satisfied")
 					}
 				}
@@ -169,28 +150,23 @@ func (srv *SessionManager) NewSession(
 						continue
 					}
 					if _groups[group.GroupName] { // Every group is unique.
-						tr.Rollback()
 						return nil, errors.New("Every reshare group should be unique")
 					}
 					_groups[group.GroupName] = true
 					for _, member := range group.Members {
 						if _members[member.MemberName] { // Every member is unique.
-							tr.Rollback()
 							return nil, errors.New("Every reshare member should be unique")
 						}
 						_members[member.MemberName] = true
 						if !member.IsAttending { // Every member is attending.
-							tr.Rollback()
 							return nil, errors.New("Every reshare member should attend")
 						}
 					}
 				}
 				if len(_groups) < 1 { // At least one group.
-					tr.Rollback()
 					return nil, errors.New("At least one reshare group is required")
 				}
 				if len(_members) < 1 { // At least one member.
-					tr.Rollback()
 					return nil, errors.New("At lest one reshare member is required")
 				}
 			}
@@ -255,7 +231,6 @@ func (srv *SessionManager) NewSession(
 		if req.SessionType == "sign" {
 			marshalled_tx_hashes, err := proto.Marshal(req.ToSign)
 			if err != nil {
-				tr.Rollback()
 				srv.Error(err)
 				return nil, err
 			}
@@ -264,9 +239,8 @@ func (srv *SessionManager) NewSession(
 			new_session.MarshalledTxHashes = make([]byte, 0)
 		}
 
-		err = tr.Create(&new_session).Error
+		err = db.Create(&new_session).Error
 		if err != nil {
-			tr.Rollback()
 			srv.Error(err)
 			return nil, err
 		}
@@ -282,9 +256,8 @@ func (srv *SessionManager) NewSession(
 				GroupQuorum: group.GroupQuorum,
 				IsReshare:   group.IsReshare,
 			}
-			err = tr.Create(&new_group).Error
+			err = db.Create(&new_group).Error
 			if err != nil {
-				tr.Rollback()
 				srv.Error(err)
 				return nil, err
 			}
@@ -302,21 +275,14 @@ func (srv *SessionManager) NewSession(
 				GroupId:      group.GroupId,
 				IsTerminated: false,
 			}
-			err = tr.Create(&new_member).Error
+			err = db.Create(&new_member).Error
 			if err != nil {
-				tr.Rollback()
 				srv.Error(err)
 				return nil, err
 			}
 		}
 	}
 
-	err = tr.Commit().Error
-	if err != nil {
-		tr.Rollback()
-		srv.Error(err)
-		return nil, err
-	}
 	return resp, nil
 }
 
@@ -324,25 +290,22 @@ func (srv *SessionManager) TerminateSession(
 	ctx context.Context,
 	req *pb.SessionTermination,
 ) (resp *pb.Void, err error) {
-	tr := srv.db.Begin()
+	db := srv.db
 	resp = &pb.Void{}
 
 	var session *MpcSession
 	{ // get session from db
-		err = tr.Where("session_id = ?", req.SessionId).First(&session).Error
+		err = db.Where("session_id = ?", req.SessionId).First(&session).Error
 		if err != nil {
-			tr.Rollback()
 			srv.Error(err)
 			return nil, err
 		}
 		if session == nil {
-			tr.Rollback()
 			srv.Debugw("Session does not exist", "SessionId", req.SessionId)
 			return nil, errors.New("Session does not exist")
 		}
 		// If a whistle is blown, return with error.
 		if session.Whistle != "" {
-			tr.Rollback()
 			srv.Debugw("Session is dangerous", "SessionId", req.SessionId)
 			return nil, errors.New(session.Whistle)
 		}
@@ -350,28 +313,24 @@ func (srv *SessionManager) TerminateSession(
 
 	var member *MpcMember
 	{ // get member from db
-		err = tr.
+		err = db.
 			Where("session_id = ? AND member_id = ?", req.SessionId, req.MemberId).
 			First(&member).Error
 		if err != nil {
-			tr.Rollback()
 			srv.Error(err)
 			return nil, err
 		}
 		if member == nil {
-			tr.Rollback()
 			srv.Debugw("Member does not exist",
 				"SessionId", req.SessionId, "MemberId", req.MemberId)
 			return nil, errors.New("Member does not exist")
 		}
 		if !member.IsAttending {
-			tr.Rollback()
 			srv.Debugw("Member is not attending",
 				"SessionId", req.SessionId, "MemberId", req.MemberId, "MemberName", member.MemberName)
 			return nil, errors.New("Member is not attending")
 		}
 		if member.IsTerminated {
-			tr.Rollback()
 			srv.Debugw("Member is terminated",
 				"SessionId", req.SessionId, "MemberId", req.MemberId, "MemberName", member.MemberName)
 			return nil, nil
@@ -383,27 +342,23 @@ func (srv *SessionManager) TerminateSession(
 		if len(session.TerminationHash) == 0 {
 			marshalled, err = proto.Marshal(req.Fruit)
 			if err != nil {
-				tr.Rollback()
 				srv.Error(err)
 				return nil, err
 			}
 			session.TerminationHash = util.Blake2b(marshalled)
-			err = tr.Save(session).Error
+			err = db.Save(session).Error
 			if err != nil {
-				tr.Rollback()
 				srv.Error(err)
 				return nil, err
 			}
 		} else { //// otherwise, check if it matches.
 			marshalled, err = proto.Marshal(req.Fruit)
 			if err != nil {
-				tr.Rollback()
 				srv.Error(err)
 				return nil, err
 			}
 			hash2 := util.Blake2b(marshalled)
 			if !bytes.Equal(session.TerminationHash, hash2) {
-				tr.Rollback()
 				srv.Debug("Termination hash mismatch")
 				return nil, err
 			}
@@ -412,9 +367,8 @@ func (srv *SessionManager) TerminateSession(
 
 	{ // Mark the member as terminated
 		member.IsTerminated = true
-		err = tr.Save(member).Error
+		err = db.Save(member).Error
 		if err != nil {
-			tr.Rollback()
 			srv.Error(err)
 			return nil, err
 		}
@@ -423,12 +377,11 @@ func (srv *SessionManager) TerminateSession(
 	var ses_members []*MpcMember
 	all_terminated := true
 	{ // If the member is the last one submitting a result, save the result to session.
-		err = tr.
+		err = db.
 			Where("session_id = ? AND member_id = ?",
 				req.SessionId, req.MemberId).
 			First(&ses_members).Error
 		if err != nil {
-			tr.Rollback()
 			srv.Error(err)
 			return nil, err
 		}
@@ -440,28 +393,20 @@ func (srv *SessionManager) TerminateSession(
 		}
 		if all_terminated {
 			session.Result = marshalled
-			err = tr.Save(session).Error
+			err = db.Save(session).Error
 			if err != nil {
-				tr.Rollback()
 				srv.Error(err)
 				return nil, err
 			}
 			// delete old messages to release memory or storage.
-			err = tr.Delete(&MpcMessage{}, "session_id = ?", req.SessionId).Error
+			err = db.Delete(&MpcMessage{}, "session_id = ?", req.SessionId).Error
 			if err != nil {
-				tr.Rollback()
 				srv.Error(err)
 				return nil, err
 			}
 		}
 	}
 
-	err = tr.Commit().Error
-	if err != nil {
-		tr.Rollback()
-		srv.Error(err)
-		return nil, err
-	}
 	return resp, nil
 }
 
@@ -469,20 +414,18 @@ func (srv *SessionManager) GetSessionConfig(
 	ctx context.Context,
 	req *pb.SessionId,
 ) (resp *pb.SessionConfig, err error) {
-	tr := srv.db.Begin()
+	db := srv.db
 	resp = &pb.SessionConfig{}
 	fmt.Printf("GetSessionConfig: %s\n", req.SessionId)
 
 	var session *MpcSession
 	{ // get session from db
-		err = tr.Where("session_id = ?", req.SessionId).First(&session).Error
+		err = db.Where("session_id = ?", req.SessionId).First(&session).Error
 		if err != nil {
-			tr.Rollback()
 			srv.Error(err)
 			return nil, err
 		}
 		if session == nil {
-			tr.Rollback()
 			srv.Debugw("Session does not exist", "SessionId", req.SessionId)
 			return nil, errors.New("Session does not exist")
 		}
@@ -490,17 +433,15 @@ func (srv *SessionManager) GetSessionConfig(
 
 	var ses_groups []*MpcGroup
 	{ // get groups from db
-		err = tr.Where("session_id = ?", req.SessionId).
+		err = db.Where("session_id = ?", req.SessionId).
 			Order("group_id ASC").
 			Find(&ses_groups).
 			Error
 		if err != nil {
-			tr.Rollback()
 			srv.Error(err)
 			return nil, err
 		}
 		if len(ses_groups) == 0 {
-			tr.Rollback()
 			srv.Errorw("Session is not properly created", "SessionId", req.SessionId)
 			return nil, err
 		}
@@ -522,12 +463,11 @@ func (srv *SessionManager) GetSessionConfig(
 	// Fill members of "Groups" in response
 	for _, resp_group := range resp.Groups {
 		var ses_members []*MpcMember
-		err = tr.Where("session_id = ? AND group_id = ?", req.SessionId, resp_group.GroupId).
+		err = db.Where("session_id = ? AND group_id = ?", req.SessionId, resp_group.GroupId).
 			Order("member_id ASC").
 			Find(&ses_members).
 			Error
 		if err != nil {
-			tr.Rollback()
 			srv.Error(err)
 			return nil, err
 		}
@@ -553,18 +493,11 @@ func (srv *SessionManager) GetSessionConfig(
 		resp.ToSign = &pb.ToSign{}
 		err = proto.Unmarshal(session.Result, resp.ToSign)
 		if err != nil {
-			tr.Rollback()
 			srv.Error(err)
 			return nil, err
 		}
 	}
 
-	err = tr.Commit().Error
-	if err != nil {
-		tr.Rollback()
-		srv.Error(err)
-		return nil, err
-	}
 	return resp, nil
 }
 
@@ -572,26 +505,23 @@ func (srv *SessionManager) GetSessionFruit(
 	ctx context.Context,
 	req *pb.SessionId,
 ) (resp *pb.SessionFruit, err error) {
-	tr := srv.db.Begin()
+	db := srv.db
 	resp = &pb.SessionFruit{}
 
 	// If a whistle is blown, return with error.
 	var session *MpcSession
 	{ // get session from db
-		err = tr.Where("session_id = ?", req.SessionId).First(&session).Error
+		err = db.Where("session_id = ?", req.SessionId).First(&session).Error
 		if err != nil {
-			tr.Rollback()
 			srv.Error(err)
 			return nil, err
 		}
 		if session == nil {
-			tr.Rollback()
 			srv.Debugw("Session does not exist", "SessionId", req.SessionId)
 			return nil, errors.New("Session does not exist")
 		}
 		// If a whistle is blown, return with error.
 		if session.Whistle != "" {
-			tr.Rollback()
 			srv.Debugw("Session is dangerous", "SessionId", req.SessionId)
 			return nil, errors.New(session.Whistle)
 		}
@@ -603,18 +533,11 @@ func (srv *SessionManager) GetSessionFruit(
 		fruit := &pb.SessionFruit{}
 		err = proto.Unmarshal(session.Result, fruit)
 		if err != nil {
-			tr.Rollback()
 			srv.Error(err)
 			return nil, err
 		}
 	}
 
-	err = tr.Commit().Error
-	if err != nil {
-		tr.Rollback()
-		srv.Error(err)
-		return nil, err
-	}
 	return resp, nil
 }
 
@@ -622,36 +545,27 @@ func (srv *SessionManager) BlowWhistle(
 	ctx context.Context,
 	req *pb.Whistle,
 ) (resp *pb.Void, err error) {
-	tr := srv.db.Begin()
+	db := srv.db
 
 	var session *MpcSession
 	{ // Append req.Message to session.Whistle
-		err = tr.Where("session_id = ?", req.SessionId).First(&session).Error
+		err = db.Where("session_id = ?", req.SessionId).First(&session).Error
 		if err != nil {
-			tr.Rollback()
 			srv.Error(err)
 			return nil, err
 		}
 		if session == nil {
-			tr.Rollback()
 			srv.Debugw("Session does not exist", "SessionId", req.SessionId)
 			return nil, errors.New("Session does not exist")
 		}
 		session.Whistle += req.Message
-		err = tr.Save(session).Error
+		err = db.Save(session).Error
 		if err != nil {
-			tr.Rollback()
 			srv.Error(err)
 			return nil, err
 		}
 	}
 
-	err = tr.Commit().Error
-	if err != nil {
-		tr.Rollback()
-		srv.Error(err)
-		return nil, err
-	}
 	return resp, nil
 }
 
@@ -659,26 +573,23 @@ func (srv *SessionManager) PostMessage(
 	ctx context.Context,
 	req *pb.Message,
 ) (resp *pb.Void, err error) {
-	tr := srv.db.Begin()
+	db := srv.db
 	resp = &pb.Void{}
 
 	// If a whistle is blown, return with error.
 	var session *MpcSession
 	{ // get session from db
-		err = tr.Where("session_id = ?", req.SessionId).First(&session).Error
+		err = db.Where("session_id = ?", req.SessionId).First(&session).Error
 		if err != nil {
-			tr.Rollback()
 			srv.Error(err)
 			return nil, err
 		}
 		if session == nil {
-			tr.Rollback()
 			srv.Debugw("Session does not exist", "SessionId", req.SessionId)
 			return nil, errors.New("Session does not exist")
 		}
 		// If a whistle is blown, return with error.
 		if session.Whistle != "" {
-			tr.Rollback()
 			srv.Debugw("Session is dangerous", "SessionId", req.SessionId)
 			return nil, errors.New(session.Whistle)
 		}
@@ -692,20 +603,13 @@ func (srv *SessionManager) PostMessage(
 			Purpose:     req.Purpose,
 			Body:        req.Body,
 		}
-		err = tr.Create(db_msg).Error
+		err = db.Create(db_msg).Error
 		if err != nil {
-			tr.Rollback()
 			srv.Error(err)
 			return nil, err
 		}
 	}
 
-	err = tr.Commit().Error
-	if err != nil {
-		tr.Rollback()
-		srv.Error(err)
-		return nil, err
-	}
 	return resp, nil
 }
 
@@ -713,25 +617,22 @@ func (srv *SessionManager) GetMessage(
 	ctx context.Context,
 	req *pb.Message,
 ) (resp *pb.Message, err error) {
-	tr := srv.db.Begin()
+	db := srv.db
 	resp = req
 
 	var session *MpcSession
 	{ // get session from db
-		err = tr.Where("session_id = ?", req.SessionId).First(&session).Error
+		err = db.Where("session_id = ?", req.SessionId).First(&session).Error
 		if err != nil {
-			tr.Rollback()
 			srv.Error(err)
 			return nil, err
 		}
 		if session == nil {
-			tr.Rollback()
 			srv.Debugw("Session does not exist", "SessionId", req.SessionId)
 			return nil, errors.New("Session does not exist")
 		}
 		// If a whistle is blown, return with error.
 		if session.Whistle != "" {
-			tr.Rollback()
 			srv.Debugw("Session is dangerous", "SessionId", req.SessionId)
 			return nil, errors.New(session.Whistle)
 		}
@@ -739,18 +640,16 @@ func (srv *SessionManager) GetMessage(
 
 	{ // get message from db
 		var msg *MpcMessage
-		err = tr.
+		err = db.
 			Where("session_id = ? AND member_id_src = ? AND member_id_dst = ? AND purpose = ?",
 				req.SessionId, req.MemberIdSrc, req.MemberIdDst, req.Purpose).
 			First(&msg).
 			Error
 		if err != nil {
-			tr.Rollback()
 			srv.Error(err)
 			return nil, err
 		}
 		if msg == nil {
-			tr.Rollback()
 			srv.Debugw("Message does not exist",
 				"SessionId", req.SessionId,
 				"MemberIdSrc", req.MemberIdSrc,
@@ -761,11 +660,5 @@ func (srv *SessionManager) GetMessage(
 		resp.Body = msg.Body
 	}
 
-	err = tr.Commit().Error
-	if err != nil {
-		tr.Rollback()
-		srv.Error(err)
-		return nil, err
-	}
 	return resp, nil
 }

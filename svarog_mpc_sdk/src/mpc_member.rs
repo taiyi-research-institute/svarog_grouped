@@ -1,13 +1,14 @@
 use crate::util::*;
 use miniz_oxide::{deflate::compress_to_vec, inflate::decompress_to_vec};
 use serde::{de::DeserializeOwned, Serialize};
-use std::collections::{HashMap, HashSet};
+use std::collections::{HashMap, HashSet, VecDeque};
 use std::time::{SystemTime, UNIX_EPOCH};
 use svarog_grpc::protogen::svarog::{
     mpc_session_manager_client::MpcSessionManagerClient, Message, SessionConfig, SessionId,
     SessionTermination,
 };
 pub use svarog_grpc::protogen::svarog::{session_fruit::Value as SessionFruitValue, SessionFruit};
+use tokio::time::{sleep, Duration};
 use xuanmi_base_support::*;
 
 #[derive(Clone)]
@@ -25,7 +26,7 @@ pub struct MpcMember {
     pub mnem_provider_id: usize,
 
     session_id: String,
-    expire_at: i64,
+    pub expire_at: u64,
     grpc_hostport: String,
 }
 
@@ -113,7 +114,7 @@ impl MpcMember {
         }
         assert_throw!(self.member_id != 0, "Member not found in session config");
         self.session_id = ses_config.session_id.clone();
-        self.expire_at = ses_config.expire_before_finish;
+        self.expire_at = ses_config.expire_before_finish as u64;
         Ok(())
     }
 
@@ -167,17 +168,33 @@ impl MpcMember {
         let mut grpc_client = MpcSessionManagerClient::connect(self.grpc_hostport.to_owned())
             .await
             .catch_()?;
-        let msg = Message {
+        let msg_idx = Message {
             session_id: self.session_id.clone(),
             purpose: purpose.to_string(),
             member_id_src: src as u64,
             member_id_dst: self.member_id as u64,
             body: Vec::new(),
         };
-        self.assert_on_time().catch_()?;
-        let msg = grpc_client.get_message(msg).await.catch_()?.into_inner();
-        let obj = msg.body.decompress().catch_()?;
-        Ok(obj)
+        let mut resp: Option<Message> = None;
+        while now() < self.expire_at {
+            let try_resp = grpc_client.get_message(msg_idx.clone()).await;
+            if let Ok(_resp) = try_resp {
+                resp = Some(_resp.into_inner());
+                break;
+            }
+        }
+        match resp {
+            Some(msg) => {
+                let obj = msg.body.decompress().catch_()?;
+                Ok(obj)
+            }
+            None => {
+                throw!(
+                    "RequestTimeout",
+                    &format!("purpose={}; src={}; dst={}", purpose, src, self.member_id)
+                );
+            }
+        }
     }
 
     pub async fn postmsg_mcast<'a, It, T>(&self, dst_set: It, purpose: &str, obj: &T) -> Outcome<()>
@@ -212,19 +229,34 @@ impl MpcMember {
             .await
             .catch_()?;
         let mut sparse_array = SparseVec::<T>::new();
-        for src in src_set {
-            let msg = Message {
+        let mut src_set: VecDeque<usize> = src_set.cloned().collect();
+        while now() < self.expire_at && !src_set.is_empty() {
+            let src: usize = src_set.pop_front().unwrap();
+            let msg_idx = Message {
                 session_id: self.session_id.clone(),
                 purpose: purpose.to_string(),
-                member_id_src: *src as u64,
+                member_id_src: src as u64,
                 member_id_dst: self.member_id as u64,
                 body: Vec::new(),
             };
-            self.assert_on_time().catch_()?;
-            let msg = grpc_client.get_message(msg).await.catch_()?.into_inner();
-            let obj = msg.body.decompress().catch_()?;
-            sparse_array.insert(*src, obj);
+            let try_resp = grpc_client.get_message(msg_idx).await;
+            if let Ok(resp) = try_resp {
+                let msg = resp.into_inner();
+                let obj = msg.body.decompress().catch_()?;
+                sparse_array.insert(src, obj);
+            } else {
+                src_set.push_back(src);
+            }
+            sleep(Duration::from_millis(100)).await;
         }
+        assert_throw!(
+            src_set.is_empty(),
+            "RequestTimeout",
+            &format!(
+                "purpose={}; src_set={:?}; dst={}",
+                purpose, &src_set, self.member_id
+            )
+        );
         Ok(sparse_array)
     }
 }
@@ -259,4 +291,11 @@ where
         let obj = serde_json::from_str(&json).catch_()?;
         Ok(obj)
     }
+}
+
+pub fn now() -> u64 {
+    SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .expect("Time went backwards")
+        .as_secs()
 }

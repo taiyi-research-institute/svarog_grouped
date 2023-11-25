@@ -23,6 +23,14 @@ path = "src/examples/keygen_mnem_main.rs"
 name = "new_session"
 path = "src/examples/new_session.rs"
 
+[[bin]]
+name = "generate_prime"
+path = "src/examples/generate_prime.rs"
+
+[[bin]]
+name = "generate_rgp"
+path = "src/examples/generate_rgp.rs"
+
 [dependencies]
 aes-gcm = { version = "0.9", features = ["std"] }
 anyhow = { version = "1.0", features = ["backtrace", "std"] }
@@ -30,6 +38,7 @@ bip32 = { version = "0.5", features = ["secp256k1", "alloc"] }
 bitcoin = { version = "0.29", features = ["serde"] }
 chrono = "0.4"
 clap = { version = "4.3", features = ["derive"] }
+color-print = { version = "0.3", features = ["terminfo"] }
 hex = "0.4"
 hmac = { version = "0.11.0", features = ["std"] }
 itertools = "0.10"
@@ -60,14 +69,6 @@ version = "0.9.0"
 default-features = false
 features = ["num-bigint"]
 
-[package.metadata.patch.curv-kzen]
-version = "0.9.0"
-patches = [{ path = "../patches/curv-kzen.patch", source = "GithubPrDiff" }]
-allow = ["dead_code", "unused_imports", "unused_variables", "unused_mut"]
-
-[patch.crates-io]
-curv-kzen = { path = "./target/patch/curv-kzen-0.9.0" }
-
 [dependencies.k256]
 version = "0.12.0"
 features = ["arithmetic", "serde", "ecdsa", "ecdsa-core"]
@@ -80,7 +81,7 @@ path = "../svarog_grpc"
 
 [dependencies.paillier]
 package = "kzen-paillier"
-version = "0.4.2"
+version = "0.4.2"  # compatible with curv-kzen-0.9.0
 default-features = false
 
 [dependencies.sha2]
@@ -103,8 +104,6 @@ lto = true
 codegen-units = 1
 strip = true
 
-# [profile.dev.package."curv-kzen".warning]
-# allow = ["dead_code", "unused_imports", "unused_variables", "unused_mut"]
-
-# [profile.release.package."curv-kzen".warning]
-# allow = ["dead_code", "unused_imports", "unused_variables", "unused_mut"]
+[patch.crates-io]
+curv-kzen = { path = "../patches/curv-kzen-0.9.0" }
+kzen-paillier = { path = "../patches/kzen-paillier-0.4.2" }

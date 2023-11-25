@@ -85,27 +85,29 @@ func (srv *SessionManager) InitSessionRecycler() {
 	sch := gocron.NewScheduler(time.UTC)
 	sch.Every("1m").Do(func() {
 		var err error
-		tr := srv.db.Begin()
+		db := srv.db
 		now := time.Now().Unix()
 
-		sql := `DELETE FROM mpc_sessions
-			WHERE (expire_before_finish < ? AND length(result) = 0)
-			OR (expire_after_finish < ? AND length(result) > 0)`
-		err = tr.Exec(sql, now, now).Error
+		sql := `SELECT session_id FROM mpc_sessions
+			WHERE (expire_before_finish <= ? AND length(result) = 0)
+			OR (expire_after_finish <= ? AND length(result) > 0)`
+		session_ids := make([]string, 0)
+		err = db.Raw(sql, now, now).Scan(&session_ids).Error
 		if err != nil {
-			tr.Rollback()
 			srv.Error(err)
-			return
+			panic(err)
 		}
 
-		err = tr.Commit().Error
+		sql = `DELETE FROM mpc_sessions WHERE session_id IN (?)`
+		err = db.Exec(sql, session_ids).Error
 		if err != nil {
-			tr.Rollback()
 			srv.Error(err)
-			return
+			panic(err)
 		}
 
-		srv.Info("Clear expired sessions")
+		if len(session_ids) > 0 {
+			srv.Info("Session recycler: ", session_ids)
+		}
 	})
 	sch.StartAsync()
 }

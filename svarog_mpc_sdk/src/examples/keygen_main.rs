@@ -1,5 +1,9 @@
 use clap::{arg, Arg, ArgAction, Command, Parser};
-use svarog_mpc_sdk::{gg18::AlgoKeygen, MpcMember};
+use svarog_mpc_sdk::{
+    gg18::{AlgoKeygen, Keys},
+    mta::range_proofs::ZkpPublicSetup,
+    DecompressAble, MpcMember,
+};
 use xuanmi_base_support::*;
 
 #[derive(Parser, Debug)]
@@ -53,7 +57,20 @@ async fn main() -> Outcome<()> {
         .use_session_config(&conf, &member_name, is_reshare)
         .catch_()?;
 
-    // let keystore = member.algo_keygen().await.catch_()?;
+    let bytes = tokio::fs::read("party_keys_vec.dat").await.catch_()?;
+    let party_keys_vec: Vec<Keys> = bytes.decompress().catch_()?;
+
+    let bytes = tokio::fs::read("rgp_vec.dat").await.catch_()?;
+    let rgp_vec: Vec<ZkpPublicSetup> = bytes.decompress().catch_()?;
+
+    let keystore = member
+        .algo_keygen(
+            Some(&party_keys_vec[member.member_id]),
+            Some(&rgp_vec[member.member_id]),
+        )
+        .await
+        .catch_()?;
+    println!("{:#?}", keystore);
 
     Ok(())
 }

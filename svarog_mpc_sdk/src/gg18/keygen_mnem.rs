@@ -24,12 +24,22 @@ use crate::{mta::range_proofs::*, util::*};
 
 #[async_trait]
 pub trait AlgoKeygenMnem {
-    async fn algo_keygen_mnem(&mut self, mnem: &str, pwd: &str) -> Outcome<KeyStore>;
+    async fn algo_keygen_mnem(
+        &mut self,
+        mnem: &str,
+        pwd: &str,
+        _party_keys: Option<&Keys>,
+    ) -> Outcome<KeyStore>;
 }
 
 #[async_trait]
 impl AlgoKeygenMnem for MpcMember {
-    async fn algo_keygen_mnem(&mut self, mnem: &str, pwd: &str) -> Outcome<KeyStore> {
+    async fn algo_keygen_mnem(
+        &mut self,
+        mnem: &str,
+        pwd: &str,
+        _party_keys: Option<&Keys>,
+    ) -> Outcome<KeyStore> {
         let my_id = self.member_id;
         let my_group_id = self.group_id;
         let key_mates = self.member_attending.clone();
@@ -54,7 +64,10 @@ impl AlgoKeygenMnem for MpcMember {
         };
         let mnem_provider_id = self.mnem_provider_id;
 
-        let mut party_keys = Keys::create_with_safe_prime(self.member_id as u16); // instead of kzen::Keys::create(my_id)
+        let mut party_keys = match _party_keys {
+            Some(party_keys) => party_keys.clone(),
+            None => Keys::create_with_safe_prime(my_id as u16),
+        };
         let mut expected_y_sum = Point::<Secp256k1>::generator().to_point();
 
         let mut purpose = "pre commitment";

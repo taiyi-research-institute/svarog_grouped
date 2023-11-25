@@ -26,12 +26,20 @@ use crate::{mta::range_proofs::*, util::*};
 
 #[async_trait]
 pub trait AlgoKeygen {
-    async fn algo_keygen(&mut self) -> Outcome<KeyStore>;
+    async fn algo_keygen(
+        &mut self,
+        _party_keys: Option<&Keys>,
+        _rgp: Option<&ZkpPublicSetup>,
+    ) -> Outcome<KeyStore>;
 }
 
 #[async_trait]
 impl AlgoKeygen for MpcMember {
-    async fn algo_keygen(&mut self) -> Outcome<KeyStore> {
+    async fn algo_keygen(
+        &mut self,
+        _party_keys: Option<&Keys>,
+        _rgp: Option<&ZkpPublicSetup>,
+    ) -> Outcome<KeyStore> {
         let my_id = self.member_id;
         let my_group_id = self.group_id;
         let key_mates = self.member_attending.clone();
@@ -54,14 +62,19 @@ impl AlgoKeygen for MpcMember {
             threshold: (self.group_quora[&my_group_id] - 1) as u16,
             share_count: group_mates.len() as u16,
         };
+        println!("my_id: {}, my_group_id: {}", my_id, my_group_id);
 
-        let party_keys = Keys::create_with_safe_prime(my_id as u16); // instead of kzen::Keys::create(my_id)
+        let party_keys = match _party_keys {
+            Some(party_keys) => party_keys.clone(),
+            None => Keys::create_with_safe_prime(my_id as u16),
+        };
         let _mnemonic = Mnemonic::from_entropy(
             (&party_keys.u_i.0 + &party_keys.u_i.1).to_bytes().as_ref(),
             Language::English,
         )
         .catch_()?;
         let _phrase: String = _mnemonic.phrase().to_string();
+        println!("generated safe prime");
 
         let mut purpose = "commitment";
         let (bc_i, decom_i) = party_keys.phase1_com_decom();
@@ -72,6 +85,7 @@ impl AlgoKeygen for MpcMember {
             .getmsg_mcast(key_mates.iter(), purpose)
             .await
             .catch_()?;
+        println!("exchanged commitment");
 
         purpose = "decommitment";
         self.postmsg_mcast(key_mates.iter(), purpose, &decom_i)
@@ -105,6 +119,7 @@ impl AlgoKeygen for MpcMember {
             }
             enc_keys
         };
+        println!("exchanged decommitment");
 
         let _decom_vec = decom_vec.values_sorted_by_key_asc();
         let (decom_head, decom_tail) = _decom_vec.split_at(1);
@@ -118,16 +133,25 @@ impl AlgoKeygen for MpcMember {
             + decom_tail
                 .iter()
                 .fold(decom_head.y_i.1.clone(), |acc, x| acc + &x.y_i.1);
+        println!("computed root pubkey");
 
         purpose = "exchange range proof";
-        let mut range_proof_setup = ZkpSetup::random(DEFAULT_GROUP_ORDER_BIT_LENGTH);
-        let mut range_proof_public_setup =
-            ZkpPublicSetup::from_private_zkp_setup(&range_proof_setup).catch_()?;
-        while !(range_proof_public_setup.verify().is_ok()) {
-            range_proof_setup = ZkpSetup::random(DEFAULT_GROUP_ORDER_BIT_LENGTH);
-            range_proof_public_setup =
-                ZkpPublicSetup::from_private_zkp_setup(&range_proof_setup).catch_()?;
-        }
+        println!("computing range proof, now={} ...", now());
+        let range_proof_public_setup = match _rgp {
+            Some(rgp) => rgp.clone(),
+            None => {
+                let mut range_proof_setup = ZkpSetup::random(DEFAULT_GROUP_ORDER_BIT_LENGTH);
+                let mut range_proof_public_setup =
+                    ZkpPublicSetup::from_private_zkp_setup(&range_proof_setup).catch_()?;
+                while !(range_proof_public_setup.verify().is_ok()) {
+                    range_proof_setup = ZkpSetup::random(DEFAULT_GROUP_ORDER_BIT_LENGTH);
+                    range_proof_public_setup =
+                        ZkpPublicSetup::from_private_zkp_setup(&range_proof_setup).catch_()?;
+                }
+                range_proof_public_setup
+            }
+        };
+        println!("computed range proof, now={}", now());
         self.postmsg_mcast(key_mates.iter(), purpose, &range_proof_public_setup)
             .await
             .catch_()?;
@@ -135,6 +159,7 @@ impl AlgoKeygen for MpcMember {
             .getmsg_mcast(key_mates.iter(), purpose)
             .await
             .catch_()?;
+        println!("exchanged range proof");
         let range_proof_public_setup_all_correct = rgpsetup_ans_vec
             .iter()
             .all(|(_id, pubsetup)| pubsetup.verify().is_ok());
@@ -142,6 +167,7 @@ impl AlgoKeygen for MpcMember {
             range_proof_public_setup_all_correct,
             "Either h1 or h2 equals to 1, or dlog proof of `alpha` or `inv_alpha` is wrong"
         );
+        println!("verified range proof. exchanging paillier proof...");
 
         let dlog_stmt_vec: SparseVec<DLogStatement> = {
             let mut dlog_stmt_vec = SparseVec::with_capacity(16);
@@ -172,6 +198,7 @@ impl AlgoKeygen for MpcMember {
             .getmsg_mcast(key_mates.iter(), purpose)
             .await
             .catch_()?;
+        println!("exchanged paillier proof");
 
         let (
             (mut vss_scheme_inner, vss_scheme_outer),
@@ -197,6 +224,7 @@ impl AlgoKeygen for MpcMember {
             .map(|i| (i + 1, secret_shares_outer[i].clone()))
             .collect();
         vss_scheme_inner.parameters.share_count = group_config.share_count;
+        println!("verified commitment and zkp");
 
         purpose = "exchange group key shares";
         for id in group_mates.iter() {
@@ -209,6 +237,19 @@ impl AlgoKeygen for MpcMember {
             .getmsg_mcast(group_mates.iter(), purpose)
             .await
             .catch_()?;
+        let mut party_shares_inner: SparseVec<Scalar<Secp256k1>> = SparseVec::new();
+        for id in group_mates.iter() {
+            if *id == my_id {
+                party_shares_inner.insert(*id, secret_shares_inner.get(id).ifnone_()?.clone());
+            } else {
+                let aead = share_inner_vec.get(id).ifnone_()?;
+                let key = enc_keys.get(id).unwrap().to_bytes();
+                let decrypted = aes_decrypt(&key, &aead).catch_()?;
+                party_shares_inner
+                    .insert(*id, Scalar::<Secp256k1>::from_bytes(&decrypted).catch_()?);
+            }
+        }
+        println!("exchanged group key shares");
 
         purpose = "exchange all key shares";
         for mid in key_mates.iter() {
@@ -222,19 +263,6 @@ impl AlgoKeygen for MpcMember {
             .await
             .catch_()?;
 
-        let mut party_shares_inner: SparseVec<Scalar<Secp256k1>> = SparseVec::new();
-        for id in group_mates.iter() {
-            if *id == my_id {
-                party_shares_inner.insert(*id, secret_shares_inner.get(id).ifnone_()?.clone());
-            } else {
-                let aead = share_inner_vec.get(id).ifnone_()?;
-                let key = enc_keys.get(id).unwrap().to_bytes();
-                let decrypted = aes_decrypt(&key, &aead).catch_()?;
-                party_shares_inner
-                    .insert(*id, Scalar::<Secp256k1>::from_bytes(&decrypted).catch_()?);
-            }
-        }
-
         let mut party_shares_outer: SparseVec<Scalar<Secp256k1>> = SparseVec::new();
         for id in key_mates.iter() {
             if *id == my_id {
@@ -247,6 +275,7 @@ impl AlgoKeygen for MpcMember {
                     .insert(*id, Scalar::<Secp256k1>::from_bytes(&decrypted).catch_()?);
             }
         }
+        println!("exchanged all key shares");
 
         purpose = "exchange vss inner scheme";
         self.postmsg_mcast(key_mates.iter(), purpose, &vss_scheme_inner)
@@ -256,6 +285,7 @@ impl AlgoKeygen for MpcMember {
             .getmsg_mcast(key_mates.iter(), purpose)
             .await
             .catch_()?;
+        println!("exchanged vss inner scheme");
 
         purpose = "exchange vss outer scheme";
         self.postmsg_mcast(key_mates.iter(), purpose, &vss_scheme_outer)
@@ -265,6 +295,7 @@ impl AlgoKeygen for MpcMember {
             .getmsg_mcast(key_mates.iter(), purpose)
             .await
             .catch_()?;
+        println!("exchanged vss outer scheme");
 
         let _point_inner_vec = point_inner_vec.values_sorted_by_key_asc();
         let _point_outer_vec = point_outer_vec.values_sorted_by_key_asc();
@@ -294,6 +325,7 @@ impl AlgoKeygen for MpcMember {
                 )?
         };
         shared_keys.y = y_sum.clone();
+        println!("verified vss");
 
         purpose = "exchange dlog proof";
         self.postmsg_mcast(key_mates.iter(), purpose, &dlog_proof)
@@ -312,6 +344,7 @@ impl AlgoKeygen for MpcMember {
             y_vec,
         )
         .catch("DlogProofFailed", "Bad dlog proof of `x_i` in `Phase3`")?;
+        println!("exchanged and verified dlog proof");
 
         let keystore = KeyStore {
             party_keys,
@@ -343,12 +376,13 @@ impl AlgoKeygen for MpcMember {
         self.terminate_session(SessionFruitValue::RootXpub(root_xpub))
             .await
             .catch_()?;
+        println!("generated keystore");
 
         Ok(keystore)
     }
 }
 
-#[derive(Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct KeyStore {
     pub party_keys: Keys,
     pub shared_keys: SharedKeys,
@@ -396,7 +430,7 @@ impl KeyStore {
     }
 }
 
-#[derive(Clone, Default, Serialize, Deserialize)]
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct KeyArch {
     pub key_quorum: usize,
     pub groups: Vec<svarog_grpc::protogen::svarog::Group>,

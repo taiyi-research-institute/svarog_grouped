@@ -3,7 +3,6 @@ package main
 import (
 	"fmt"
 	"net"
-	"time"
 
 	"github.com/BurntSushi/toml"
 	"google.golang.org/grpc"
@@ -45,8 +44,6 @@ func main() {
 	bizCore := &biz.SessionManager{}
 	bizCore.InitLogger(conf.Logging.Level, conf.Logging.Dir)
 	bizCore.InitDB()
-	// sleep 1 second to wait for DB to be ready
-	time.Sleep(1 * time.Second)
 	bizCore.InitSessionRecycler()
 
 	var opt []grpc.ServerOption
