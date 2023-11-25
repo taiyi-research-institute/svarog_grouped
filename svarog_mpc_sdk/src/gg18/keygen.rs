@@ -44,16 +44,6 @@ impl AlgoKeygen for MpcMember {
         let my_group_id = self.group_id;
         let key_mates = self.member_attending.clone();
         let group_mates = self.group_member[&self.group_id].clone();
-        let key_mates_wome = {
-            let mut _km = key_mates.clone();
-            _km.remove(&my_id);
-            _km
-        };
-        let group_mates_wome = {
-            let mut _gm = group_mates.clone();
-            _gm.remove(&my_id);
-            _gm
-        };
         let config = Parameters {
             threshold: (self.key_quorum - 1) as u16,
             share_count: key_mates.len() as u16,
@@ -63,18 +53,15 @@ impl AlgoKeygen for MpcMember {
             share_count: group_mates.len() as u16,
         };
         println!("my_id: {}, my_group_id: {}", my_id, my_group_id);
-
-        let party_keys = match _party_keys {
-            Some(party_keys) => party_keys.clone(),
-            None => Keys::create_with_safe_prime(my_id as u16),
-        };
+        print!("computing party keys...");
+        let party_keys = Keys::create_with_safe_prime(my_id as u16);
         let _mnemonic = Mnemonic::from_entropy(
             (&party_keys.u_i.0 + &party_keys.u_i.1).to_bytes().as_ref(),
             Language::English,
         )
         .catch_()?;
         let _phrase: String = _mnemonic.phrase().to_string();
-        println!("generated safe prime");
+        println!("computed party keys");
 
         let mut purpose = "commitment";
         let (bc_i, decom_i) = party_keys.phase1_com_decom();
@@ -133,25 +120,23 @@ impl AlgoKeygen for MpcMember {
             + decom_tail
                 .iter()
                 .fold(decom_head.y_i.1.clone(), |acc, x| acc + &x.y_i.1);
-        println!("computed root pubkey");
+        println!("computed root pubkey.");
+
+        print!("computing range proof...");
+        let range_proof_public_setup = {
+            let mut rpps: Option<ZkpPublicSetup> = None;
+            while rpps.is_none() {
+                let rps = ZkpSetup::random(DEFAULT_GROUP_ORDER_BIT_LENGTH);
+                let _rpps = ZkpPublicSetup::from_private_zkp_setup(&rps).catch_()?;
+                if _rpps.verify().is_ok() {
+                    rpps = Some(_rpps);
+                }
+            }
+            rpps.unwrap()
+        };
+        println!("computed range proof");
 
         purpose = "exchange range proof";
-        println!("computing range proof, now={} ...", now());
-        let range_proof_public_setup = match _rgp {
-            Some(rgp) => rgp.clone(),
-            None => {
-                let mut range_proof_setup = ZkpSetup::random(DEFAULT_GROUP_ORDER_BIT_LENGTH);
-                let mut range_proof_public_setup =
-                    ZkpPublicSetup::from_private_zkp_setup(&range_proof_setup).catch_()?;
-                while !(range_proof_public_setup.verify().is_ok()) {
-                    range_proof_setup = ZkpSetup::random(DEFAULT_GROUP_ORDER_BIT_LENGTH);
-                    range_proof_public_setup =
-                        ZkpPublicSetup::from_private_zkp_setup(&range_proof_setup).catch_()?;
-                }
-                range_proof_public_setup
-            }
-        };
-        println!("computed range proof, now={}", now());
         self.postmsg_mcast(key_mates.iter(), purpose, &range_proof_public_setup)
             .await
             .catch_()?;

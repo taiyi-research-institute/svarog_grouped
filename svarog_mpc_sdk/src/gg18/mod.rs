@@ -355,29 +355,6 @@ impl Keys {
                 &format!("({},{},{},{})", pred1, pred2, pred3, pred4)
             );
         }
-        let correct_key_correct_decom_all = (0..bc1_vec.len()).all(|i| {
-            (
-                HashCommitment::<Sha256>::create_commitment_with_user_defined_randomness(
-                    &BigInt::from_bytes(decom_vec[i].y_i.0.to_bytes(true).as_ref()),
-                    &decom_vec[i].blind_factor.0,
-                ),
-                HashCommitment::<Sha256>::create_commitment_with_user_defined_randomness(
-                    &BigInt::from_bytes(decom_vec[i].y_i.1.to_bytes(true).as_ref()),
-                    &decom_vec[i].blind_factor.1,
-                ),
-            ) == bc1_vec[i].com
-                && pproofs_vec[i]
-                    .correct_key_proof
-                    .verify(&bc1_vec[i].e, zk_paillier::zkproofs::SALT_STRING)
-                    .is_ok()
-                && pproofs_vec[i]
-                    .pblum_modulus_proof
-                    .verify(&bc1_vec[i].e.n, &enc_keys[i])
-                && pproofs_vec[i]
-                    .no_small_factor_proof
-                    .verify(&dlog_statement_vec[i], &bc1_vec[i].e.n)
-        });
-        assert_throw!(correct_key_correct_decom_all);
 
         let (vss_scheme_inner, secret_shares_inner) =
             VerifiableSS::share(params.0.threshold, params.0.share_count, &self.u_i.0);
