@@ -15,21 +15,13 @@ path = "src/examples/keygen_main.rs"
 name = "keygen_mnem_main"
 path = "src/examples/keygen_mnem_main.rs"
 
-# [[bin]]
-# name = "sign_main"
-# path = "src/examples/sign_main.rs"
+[[bin]]
+name = "sign_main"
+path = "src/examples/sign_main.rs"
 
 # [[bin]]
 # name = "reshare_main"
 # path = "src/examples/reshare_main.rs"
-
-# [[bin]]
-# name = "generate_prime"
-# path = "src/examples/generate_prime.rs"
-
-# [[bin]]
-# name = "generate_rgp"
-# path = "src/examples/generate_rgp.rs"
 
 [dependencies]
 aes-gcm = { version = "0.9", features = ["std"] }
@@ -49,7 +41,7 @@ prost-types = "0.11.9"
 rand_core = "0.6"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
-tiny-bip39 = "1"                                               # provides bip39::*, not equivalent to crate `bip39`
+tiny-bip39 = "1" # provides bip39::*, not equivalent to crate `bip39`
 uuid = { version = "0.8", features = ["v4"] }
 tokio = { version = "1.32.0", features = ["full"] }
 tokio-stream = "0.1"
@@ -60,9 +52,6 @@ sha3 = "0.10.8"
 num-bigint = { version = "0.4.4", features = ["serde"] }
 rand = "0.8.5"
 zeroize = "1.7.0"
-# tracing = "*"
-# tracing-subscriber = "*"
-# tracing-appender = "*"
 
 [dependencies.curv-kzen]
 version = "0.9.0"
@@ -74,15 +63,15 @@ features = ["num-bigint"]
 version = "0.12.0"
 features = ["arithmetic", "serde", "ecdsa", "ecdsa-core"]
 
-# [dependencies.multi-party-ecdsa]
-# path = "patches/mp-ecdsa-184c49fa"
+[dependencies.multi-party-ecdsa]
+path = "../patches/mp-ecdsa-184c49fa"
 
 [dependencies.svarog_grpc]
 path = "../svarog_grpc"
 
 [dependencies.paillier]
 package = "kzen-paillier"
-version = "0.4.2"  # compatible with curv-kzen-0.9.0
+version = "0.4.2"         # compatible with curv-kzen-0.9.0
 default-features = false
 
 [dependencies.sha2]
@@ -107,4 +96,3 @@ strip = true
 
 [patch.crates-io]
 curv-kzen = { path = "../patches/curv-kzen-0.9.0" }
-kzen-paillier = { path = "../patches/kzen-paillier-0.4.2" }

@@ -4,7 +4,6 @@ import (
 	"bytes"
 	"context"
 	"errors"
-	"fmt"
 	"sort"
 	"time"
 
@@ -417,7 +416,6 @@ func (srv *SessionManager) GetSessionConfig(
 ) (resp *pb.SessionConfig, err error) {
 	db := srv.db
 	resp = &pb.SessionConfig{}
-	fmt.Printf("GetSessionConfig: %s\n", req.SessionId)
 
 	var session *MpcSession
 	{ // get session from db
@@ -492,7 +490,7 @@ func (srv *SessionManager) GetSessionConfig(
 		resp.ExpireBeforeFinish = session.ExpireBeforeFinish
 		resp.ExpireAfterFinish = session.ExpireAfterFinish
 		resp.ToSign = &pb.ToSign{}
-		err = proto.Unmarshal(session.Result, resp.ToSign)
+		err = proto.Unmarshal(session.MarshalledTxHashes, resp.ToSign)
 		if err != nil {
 			srv.Error(err)
 			return nil, err
@@ -655,8 +653,9 @@ func (srv *SessionManager) GetMessage(
 		}
 		if msg == nil {
 			resp.Body = make([]byte, 0)
+		} else {
+			resp.Body = msg.Body
 		}
-		resp.Body = msg.Body
 	}
 
 	return resp, nil

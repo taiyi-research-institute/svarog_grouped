@@ -5,7 +5,6 @@
 use std::ops::Deref;
 
 use bip32::ChainCode; // chain_code = left half of SHA512(pk)
-use bip32::{ChildNumber, ExtendedKey, ExtendedKeyAttrs, Prefix};
 use bip39::{Language, Mnemonic};
 use curv::{
     arithmetic::traits::Converter,
@@ -13,9 +12,11 @@ use curv::{
         proofs::sigma_dlog::DLogProof, secret_sharing::feldman_vss::VerifiableSS,
     },
     elliptic::curves::{secp256_k1::Secp256k1, Point, Scalar},
+    BigInt,
 };
-use sha2::{Sha256, Sha512};
-use svarog_grpc::protogen::svarog::SessionConfig;
+use multi_party_ecdsa::protocols::multi_party_ecdsa::gg_2018::party_i::*;
+use paillier::EncryptionKey;
+use sha2::{Digest, Sha256, Sha512};
 use tonic::async_trait;
 use xuanmi_base_support::*;
 
@@ -105,10 +106,10 @@ impl AlgoKeygen for MpcMember {
         let (vss_scheme, secret_share_vec, _) = party_keys
             .phase1_verify_com_phase3_verify_correct_key_phase2_distribute(
                 &config,
-                &decom_svec.values_sorted_by_key_asc(),
-                &com_svec.values_sorted_by_key_asc(),
+                &decom_svec.values_by_key_asc(),
+                &com_svec.values_by_key_asc(),
             )
-            .catch_()?;
+            .unwrap();
 
         let secret_share_svec = {
             let mut res: SparseVec<Scalar<Secp256k1>> = SparseVec::new();
@@ -159,16 +160,16 @@ impl AlgoKeygen for MpcMember {
 
         println!("Exchanged VSS commitments.");
 
-        let y_vec = y_svec.values_sorted_by_key_asc();
+        let y_vec = y_svec.values_by_key_asc();
         let (shared_keys, dlog_proof) = party_keys
             .phase2_verify_vss_construct_keypair_phase3_pok_dlog(
                 &config,
                 &y_vec,
-                &party_shares_svec.values_sorted_by_key_asc(),
-                &vss_scheme_svec.values_sorted_by_key_asc(),
+                &party_shares_svec.values_by_key_asc(),
+                &vss_scheme_svec.values_by_key_asc(),
                 my_id as u16,
             )
-            .catch_()?;
+            .unwrap();
 
         purpose = "dlog proof";
         self.postmsg_mcast(key_mates.iter(), purpose, &dlog_proof)
@@ -181,8 +182,7 @@ impl AlgoKeygen for MpcMember {
 
         println!("Exchanged DLog proofs.");
 
-        Keys::verify_dlog_proofs(&config, &dlog_proof_svec.values_sorted_by_key_asc(), &y_vec)
-            .catch_()?;
+        Keys::verify_dlog_proofs(&config, &dlog_proof_svec.values_by_key_asc(), &y_vec).unwrap();
 
         println!("Verified DLog proofs.");
 
@@ -210,66 +210,7 @@ impl AlgoKeygen for MpcMember {
             key_arch: KeyArch::default(),
             member_id: my_id,
         };
+
         Ok(keystore)
-    }
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct KeyStore {
-    pub party_keys: Keys,
-    pub shared_keys: SharedKeys,
-    pub chain_code: [u8; 32],
-    pub vss_scheme_svec: SparseVec<VerifiableSS<Secp256k1>>,
-    pub paillier_key_svec: SparseVec<EncryptionKey>,
-
-    pub key_arch: KeyArch,
-    pub member_id: usize,
-}
-
-impl KeyStore {
-    pub fn marshall(&self) -> Outcome<Vec<u8>> {
-        let deflated = self.compress().catch_()?;
-        Ok(deflated)
-    }
-
-    pub fn unmarshall(deflated: &[u8]) -> Outcome<Self> {
-        let obj: Self = deflated.decompress().catch_()?;
-        Ok(obj)
-    }
-
-    pub fn attr_root_xpub(&self) -> Outcome<String> {
-        let pk_short = self.attr_root_pk(true);
-        assert_throw!(pk_short.len() == 33, "Invalid pubkey length");
-        let ex_pk = ExtendedKey {
-            prefix: Prefix::XPUB,
-            attrs: ExtendedKeyAttrs {
-                depth: 0u8,
-                parent_fingerprint: [0u8; 4],
-                child_number: ChildNumber(0u32),
-                chain_code: self.chain_code.clone(),
-            },
-            key_bytes: pk_short.try_into().unwrap(),
-        };
-        Ok(ex_pk.to_string())
-    }
-
-    pub fn attr_root_pk(&self, compress: bool) -> Vec<u8> {
-        let point = &self.shared_keys.y;
-        let pk = point.to_bytes(compress).deref().to_vec();
-        pk
-    }
-}
-
-#[derive(Debug, Clone, Default, Serialize, Deserialize)]
-pub struct KeyArch {
-    pub key_quorum: usize,
-    pub groups: Vec<svarog_grpc::protogen::svarog::Group>,
-}
-
-impl From<&SessionConfig> for KeyArch {
-    fn from(config: &SessionConfig) -> Self {
-        let key_quorum = config.key_quorum as usize;
-        let groups = config.groups.clone();
-        Self { key_quorum, groups }
     }
 }

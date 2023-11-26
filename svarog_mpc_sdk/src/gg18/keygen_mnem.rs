@@ -11,11 +11,16 @@ use bitcoin::Network;
 use curv::{
     arithmetic::traits::Converter,
     cryptographic_primitives::{
+        commitments::hash_commitment::HashCommitment, commitments::traits::Commitment,
         proofs::sigma_dlog::DLogProof, secret_sharing::feldman_vss::VerifiableSS,
     },
     elliptic::curves::{secp256_k1::Secp256k1, Point, Scalar},
+    BigInt,
 };
-use sha2::{Sha256, Sha512};
+use multi_party_ecdsa::protocols::multi_party_ecdsa::gg_2018::party_i::*;
+use paillier::EncryptionKey;
+use serde::{Deserialize, Serialize};
+use sha2::Sha256;
 use tonic::async_trait;
 use xuanmi_base_support::*;
 
@@ -150,7 +155,10 @@ impl AlgoKeygenMnem for MpcMember {
         key_mates.insert(0);
         let mut purpose = "";
 
-        println!("(One of) nemonic consumer");
+        println!(
+            "member_id = {}, group_id = {}. One of mnemonic consumer(s).",
+            my_id, self.group_id
+        );
 
         let mut temp_party_keys: Keys = Keys::create(my_id as u16);
 
@@ -287,10 +295,10 @@ impl AlgoKeygenMnem for MpcMember {
         let (vss_scheme, secret_share_vec, _) = party_keys
             .phase1_verify_com_phase3_verify_correct_key_phase2_distribute(
                 &config,
-                &decom_svec.values_sorted_by_key_asc(),
-                &com_svec.values_sorted_by_key_asc(),
+                &decom_svec.values_by_key_asc(),
+                &com_svec.values_by_key_asc(),
             )
-            .catch_()?;
+            .unwrap();
 
         let secret_share_svec = {
             let mut res: SparseVec<Scalar<Secp256k1>> = SparseVec::new();
@@ -341,16 +349,16 @@ impl AlgoKeygenMnem for MpcMember {
 
         println!("Exchanged VSS commitments.");
 
-        let y_vec = y_svec.values_sorted_by_key_asc();
+        let y_vec = y_svec.values_by_key_asc();
         let (shared_keys, dlog_proof) = party_keys
             .phase2_verify_vss_construct_keypair_phase3_pok_dlog(
                 &config,
                 &y_vec,
-                &party_shares_svec.values_sorted_by_key_asc(),
-                &vss_scheme_svec.values_sorted_by_key_asc(),
+                &party_shares_svec.values_by_key_asc(),
+                &vss_scheme_svec.values_by_key_asc(),
                 my_id as u16,
             )
-            .catch_()?;
+            .unwrap();
 
         purpose = "dlog proof";
         self.postmsg_mcast(key_mates.iter(), purpose, &dlog_proof)
@@ -363,8 +371,7 @@ impl AlgoKeygenMnem for MpcMember {
 
         println!("Exchanged DLog proofs.");
 
-        Keys::verify_dlog_proofs(&config, &dlog_proof_svec.values_sorted_by_key_asc(), &y_vec)
-            .catch_()?;
+        Keys::verify_dlog_proofs(&config, &dlog_proof_svec.values_by_key_asc(), &y_vec).unwrap();
 
         println!("Verified DLog proofs.");
 
@@ -382,6 +389,7 @@ impl AlgoKeygenMnem for MpcMember {
             key_arch: KeyArch::default(),
             member_id: my_id,
         };
+
         Ok(keystore)
     }
 }

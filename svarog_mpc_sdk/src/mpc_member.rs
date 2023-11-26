@@ -99,6 +99,13 @@ impl MpcMember {
                     self.reshare_members.insert(member_id as usize);
                 }
                 if member.member_name == member_name && is_reshare == group.is_reshare {
+                    assert_throw!(
+                        member.is_attending,
+                        &format!(
+                            "Member {} does not belong to session {}",
+                            member_name, &ses_config.session_id
+                        )
+                    );
                     self.member_id = member_id as usize;
                     self.group_id = group_id as usize;
                 }

@@ -1,5 +1,9 @@
 use clap::{arg, Arg, ArgAction, Command, Parser};
-use svarog_mpc_sdk::{gg18::AlgoKeygen, MpcMember};
+use svarog_mpc_sdk::{
+    gg18::{AlgoKeygen, KeyArch},
+    CompressAble, MpcMember,
+};
+use tokio::{fs::File, io::AsyncWriteExt};
 use xuanmi_base_support::*;
 
 #[derive(Parser, Debug)]
@@ -46,10 +50,12 @@ async fn main() -> Outcome<()> {
         .use_session_config(&conf, &member_name, false)
         .catch_()?;
 
-    let keystore = member.algo_keygen().await.catch_()?;
-    println!("{:#?}", keystore);
-    // TODO: add key arch to keystore
-    // TODO: save to file
+    let mut keystore = member.algo_keygen().await.catch_()?;
+    keystore.key_arch = KeyArch::from(&conf);
+    let buf = keystore.compress().catch_()?;
+    let path = &format!("{}@{}.keystore", member_name, conf.session_id);
+    let mut file = File::create(path).await.catch_()?;
+    file.write_all(&buf).await.catch_()?;
 
     Ok(())
 }
