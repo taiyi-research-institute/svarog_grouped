@@ -11,6 +11,10 @@ path = "src/examples/new_session.rs"
 name = "keygen_main"
 path = "src/examples/keygen_main.rs"
 
+[[bin]]
+name = "keygen_mnem_main"
+path = "src/examples/keygen_mnem_main.rs"
+
 # [[bin]]
 # name = "sign_main"
 # path = "src/examples/sign_main.rs"
@@ -18,10 +22,6 @@ path = "src/examples/keygen_main.rs"
 # [[bin]]
 # name = "reshare_main"
 # path = "src/examples/reshare_main.rs"
-
-# [[bin]]
-# name = "keygen_mnem_main"
-# path = "src/examples/keygen_mnem_main.rs"
 
 # [[bin]]
 # name = "generate_prime"

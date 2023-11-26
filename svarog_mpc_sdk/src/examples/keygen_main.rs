@@ -24,12 +24,6 @@ async fn main() -> Outcome<()> {
                 .action(ArgAction::Set),
         )
         .arg(
-            Arg::new("reshare")
-                .short('r')
-                .required(false)
-                .action(ArgAction::SetTrue),
-        )
-        .arg(
             Arg::new("url_sesmon")
                 .short('u')
                 .default_value("http://127.0.0.1:9000")
@@ -40,7 +34,6 @@ async fn main() -> Outcome<()> {
         .get_one::<String>("member_name")
         .ifnone_()?
         .to_owned();
-    let is_reshare: bool = matches.get_flag("reshare");
     let url_sesmon: String = matches
         .get_one::<String>("url_sesmon")
         .ifnone_()?
@@ -50,7 +43,7 @@ async fn main() -> Outcome<()> {
     let conf = member.fetch_session_config("keygen").await.catch_()?;
 
     member
-        .use_session_config(&conf, &member_name, is_reshare)
+        .use_session_config(&conf, &member_name, false)
         .catch_()?;
 
     let keystore = member.algo_keygen().await.catch_()?;

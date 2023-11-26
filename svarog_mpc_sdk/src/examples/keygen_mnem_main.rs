@@ -1,5 +1,5 @@
 use clap::{arg, Arg, ArgAction, Command, Parser};
-use svarog_mpc_sdk::{gg18::AlgoKeygen, MpcMember};
+use svarog_mpc_sdk::{gg18::AlgoKeygenMnem, MpcMember};
 use xuanmi_base_support::*;
 
 #[derive(Parser, Debug)]
@@ -24,8 +24,8 @@ async fn main() -> Outcome<()> {
                 .action(ArgAction::Set),
         )
         .arg(
-            Arg::new("reshare")
-                .short('r')
+            Arg::new("mnem")
+                .short('n')
                 .required(false)
                 .action(ArgAction::SetTrue),
         )
@@ -40,7 +40,7 @@ async fn main() -> Outcome<()> {
         .get_one::<String>("member_name")
         .ifnone_()?
         .to_owned();
-    let is_reshare: bool = matches.get_flag("reshare");
+    let is_mnem_provider: bool = matches.get_flag("mnem");
     let url_sesmon: String = matches
         .get_one::<String>("url_sesmon")
         .ifnone_()?
@@ -50,10 +50,19 @@ async fn main() -> Outcome<()> {
     let conf = member.fetch_session_config("keygen").await.catch_()?;
 
     member
-        .use_session_config(&conf, &member_name, is_reshare)
+        .use_session_config(&conf, &member_name, false)
         .catch_()?;
 
-    // let keystore = member.algo_keygen().await.catch_()?;
+    let (mnem, pwd) = if is_mnem_provider {
+        let mnem = "park remain person kitchen mule spell knee armed position rail grid ankle";
+        let pwd = "";
+        (mnem, pwd)
+    } else {
+        ("", "")
+    };
+    let keystore = member.algo_keygen_mnem(mnem, pwd).await.catch_()?;
+
+    println!("keystore: {:#?}", keystore);
 
     Ok(())
 }

@@ -23,7 +23,6 @@ pub struct MpcMember {
     pub key_quorum: usize,
     pub reshare_groups: HashSet<usize>,
     pub reshare_members: HashSet<usize>,
-    pub mnem_provider_id: usize,
 
     session_id: String,
     pub expire_at: u64,
@@ -48,7 +47,6 @@ impl MpcMember {
             key_quorum: 0,
             reshare_groups: HashSet::new(),
             reshare_members: HashSet::new(),
-            mnem_provider_id: 0,
 
             session_id: "".to_string(),
             expire_at: 0,
@@ -104,15 +102,15 @@ impl MpcMember {
                     self.member_id = member_id as usize;
                     self.group_id = group_id as usize;
                 }
-                if member_name == "__mnem_provider" {
-                    self.mnem_provider_id = member_id as usize;
-                }
             }
             if group.is_reshare {
                 self.reshare_groups.insert(group_id as usize);
             }
         }
-        assert_throw!(self.member_id != 0, "Member not found in session config");
+        assert_throw!(
+            member_name != "" && self.member_id != 0,
+            "Member not found in session config"
+        );
         self.session_id = ses_config.session_id.clone();
         self.expire_at = ses_config.expire_before_finish as u64;
         Ok(())
