@@ -70,19 +70,19 @@ example_keygen_mnem: kill_tmux
 		-n pF  -d ";" new-window \
 		-n pCl -d ";" new-window \
 		-n pBr -d ";" new-window \
-		-n _pI -d ";" new-window \
+		-n pNu -d ";" new-window \
 		-n pHe -d ";" new-window \
 		-n pNe -d ";" new-window \
 		-n pAr -d ";"
 	@sleep 1
 	@tmux send-keys -t svarog:man "cd $(shell pwd)/out && ./svarog_manager.run" C-m
 	@sleep 3
-	@tmux send-keys -t svarog:ses "cd $(shell pwd)/out && ./new_session.run keygen_mnem" C-m
+	@tmux send-keys -t svarog:ses "cd $(shell pwd)/out && ./new_session.run keygen" C-m
 	@sleep 1
 	@tmux send-keys -t svarog:pF  "cd $(shell pwd)/out && ./keygen_mnem_main.run -m fluorine" C-m
 	@tmux send-keys -t svarog:pCl "cd $(shell pwd)/out && ./keygen_mnem_main.run -m chlorine" C-m
 	@tmux send-keys -t svarog:pBr "cd $(shell pwd)/out && ./keygen_mnem_main.run -m bromine" C-m
-	@tmux send-keys -t svarog:_pI "cd $(shell pwd)/out && ./keygen_mnem_main.run -m iodine" C-m
+	@tmux send-keys -t svarog:pNu "cd $(shell pwd)/out && ./keygen_mnem_main.run -p" C-m
 	@tmux send-keys -t svarog:pHe "cd $(shell pwd)/out && ./keygen_mnem_main.run -m helium" C-m
 	@tmux send-keys -t svarog:pNe "cd $(shell pwd)/out && ./keygen_mnem_main.run -m neon" C-m
 	@tmux send-keys -t svarog:pAr "cd $(shell pwd)/out && ./keygen_mnem_main.run -m argon" C-m

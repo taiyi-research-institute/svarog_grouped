@@ -107,10 +107,9 @@ impl MpcMember {
                 self.reshare_groups.insert(group_id as usize);
             }
         }
-        assert_throw!(
-            member_name != "" && self.member_id != 0,
-            "Member not found in session config"
-        );
+        if member_name != "" {
+            assert_throw!(self.member_id != 0, "Member not found in session config")
+        }
         self.session_id = ses_config.session_id.clone();
         self.expire_at = ses_config.expire_before_finish as u64;
         Ok(())
@@ -175,9 +174,15 @@ impl MpcMember {
         };
         let mut resp: Option<Message> = None;
         while now() < self.expire_at {
-            let try_resp = grpc_client.get_message(msg_idx.clone()).await;
-            if let Ok(_resp) = try_resp {
-                resp = Some(_resp.into_inner());
+            let _resp = grpc_client
+                .get_message(msg_idx.clone())
+                .await
+                .catch_()?
+                .into_inner();
+            if _resp.body.is_empty() {
+                sleep(Duration::from_millis(100)).await;
+            } else {
+                resp = Some(_resp);
                 break;
             }
         }
@@ -237,13 +242,16 @@ impl MpcMember {
                 member_id_dst: self.member_id as u64,
                 body: Vec::new(),
             };
-            let try_resp = grpc_client.get_message(msg_idx).await;
-            if let Ok(resp) = try_resp {
-                let msg = resp.into_inner();
-                let obj = msg.body.decompress().catch_()?;
-                sparse_array.insert(src, obj);
-            } else {
+            let resp = grpc_client
+                .get_message(msg_idx)
+                .await
+                .catch_()?
+                .into_inner();
+            if resp.body.is_empty() {
                 src_set.push_back(src);
+            } else {
+                let obj = resp.body.decompress().catch_()?;
+                sparse_array.insert(src, obj);
             }
             sleep(Duration::from_millis(100)).await;
         }

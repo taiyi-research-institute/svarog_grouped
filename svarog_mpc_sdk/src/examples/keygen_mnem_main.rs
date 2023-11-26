@@ -20,13 +20,16 @@ async fn main() -> Outcome<()> {
         .arg(
             Arg::new("member_name")
                 .short('m')
-                .required(true)
+                .required(false)
+                .default_value("")
                 .action(ArgAction::Set),
         )
         .arg(
-            Arg::new("mnem")
-                .short('n')
+            Arg::new("provide_mnem")
+                .short('p')
+                .long("pm")
                 .required(false)
+                .conflicts_with("member_name")
                 .action(ArgAction::SetTrue),
         )
         .arg(
@@ -36,11 +39,11 @@ async fn main() -> Outcome<()> {
                 .action(ArgAction::Set),
         )
         .get_matches();
+    let is_mnem_provider: bool = matches.get_flag("provide_mnem");
     let member_name: String = matches
         .get_one::<String>("member_name")
         .ifnone_()?
         .to_owned();
-    let is_mnem_provider: bool = matches.get_flag("mnem");
     let url_sesmon: String = matches
         .get_one::<String>("url_sesmon")
         .ifnone_()?
@@ -53,16 +56,16 @@ async fn main() -> Outcome<()> {
         .use_session_config(&conf, &member_name, false)
         .catch_()?;
 
-    let (mnem, pwd) = if is_mnem_provider {
+    if is_mnem_provider {
         let mnem = "park remain person kitchen mule spell knee armed position rail grid ankle";
         let pwd = "";
-        (mnem, pwd)
+        member.algo_keygen_provide_mnem(mnem, pwd).await.catch_()?;
     } else {
-        ("", "")
+        let keystore = member.algo_keygen_consume_mnem().await.catch_()?;
+        println!("keystore: {:#?}", keystore);
+        // TODO: add key arch to keystore
+        // TODO: save to file
     };
-    let keystore = member.algo_keygen_mnem(mnem, pwd).await.catch_()?;
-
-    println!("keystore: {:#?}", keystore);
 
     Ok(())
 }

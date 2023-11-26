@@ -60,20 +60,19 @@ impl AlgoKeygen for MpcMember {
                 .phrase()
                 .to_string();
 
-        let (bc_i, decom_i) = party_keys.phase1_broadcast_phase3_proof_of_correct_key();
+        let (com, decom) = party_keys.phase1_broadcast_phase3_proof_of_correct_key();
 
         let mut purpose = "com";
-        self.postmsg_mcast(key_mates.iter(), purpose, &bc_i)
+        self.postmsg_mcast(key_mates.iter(), purpose, &com)
             .await
             .catch_()?;
         let com_svec: SparseVec<KeyGenBroadcastMessage1> = self
             .getmsg_mcast(key_mates.iter(), purpose)
             .await
             .catch_()?;
-        assert_throw!(com_svec[&my_id].e == bc_i.e, "Broken message");
 
         purpose = "decom";
-        self.postmsg_mcast(key_mates.iter(), purpose, &decom_i)
+        self.postmsg_mcast(key_mates.iter(), purpose, &decom)
             .await
             .catch_()?;
         let decom_svec: SparseVec<KeyGenDecommitMessage1> = self

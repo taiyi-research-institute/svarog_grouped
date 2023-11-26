@@ -50,8 +50,7 @@ impl AlgoKeygenMnem for MpcMember {
         let temp_party_keys: Keys = Keys::create(0 as u16);
 
         purpose = "temp commitment";
-        let (temp_com, temp_decom) =
-            temp_party_keys.phase1_broadcast_phase3_proof_of_correct_key();
+        let (temp_com, temp_decom) = temp_party_keys.phase1_broadcast_phase3_proof_of_correct_key();
         self.postmsg_mcast(key_mates.iter(), purpose, &temp_com)
             .await
             .catch_()?;
@@ -141,24 +140,6 @@ impl AlgoKeygenMnem for MpcMember {
 
         println!("The mnemonic provider have sent the key shares.");
 
-        //     party_keys.u_i = partition[member_id_to_idx[&my_id]].clone();
-        //     party_keys.y_i = &partition[member_id_to_idx[&my_id]] * Point::<Secp256k1>::generator();
-        //     chain_code
-        // } else {
-        //     let (aead_pack_i1, aead_pack_i2): (AEAD, AEAD) =
-        //         self.getmsg_p2p(mnem_id, purpose).await.catch_()?;
-
-        //     let key = BigInt::to_bytes(&aeskey_svec[&mnem_id]);
-        //     let mut out = aes_decrypt(&key, &aead_pack_i1).catch_()?;
-        //     let out_bn = BigInt::from_bytes(&out);
-        //     let out_fe = Scalar::<Secp256k1>::from(&out_bn);
-        //     // (party_keys.u_i, party_keys.y_i) =
-        //     //     (out_fe.clone(), &out_fe * Point::<Secp256k1>::generator());
-        //     out = aes_decrypt(&key, &aead_pack_i2).catch_()?;
-        //     assert_throw!(out.len() == 32, "Invalid chain code");
-        //     out.try_into().unwrap()
-        // };
-
         Ok(())
     }
 
@@ -174,8 +155,7 @@ impl AlgoKeygenMnem for MpcMember {
         let mut temp_party_keys: Keys = Keys::create(my_id as u16);
 
         purpose = "temp commitment";
-        let (temp_com, temp_decom) =
-            temp_party_keys.phase1_broadcast_phase3_proof_of_correct_key();
+        let (temp_com, temp_decom) = temp_party_keys.phase1_broadcast_phase3_proof_of_correct_key();
         self.postmsg_mcast(key_mates.iter(), purpose, &temp_com)
             .await
             .catch_()?;
@@ -224,7 +204,7 @@ impl AlgoKeygenMnem for MpcMember {
         purpose = "share real sk";
         let obj: MnemProviderMessage = self.getmsg_p2p(0, purpose).await.catch_()?;
         let expected_y_sum = obj.y_sum;
-        let temp_aeskey = BigInt::to_bytes(&temp_aeskey_svec[&0]);    
+        let temp_aeskey = BigInt::to_bytes(&temp_aeskey_svec[&0]);
         let key_part_bytes = aes_decrypt(&temp_aeskey, &obj.aead_key_part).catch_()?;
         let key_part_bigint = BigInt::from_bytes(&key_part_bytes);
         let key_part = Scalar::<Secp256k1>::from(&key_part_bigint);
@@ -239,9 +219,169 @@ impl AlgoKeygenMnem for MpcMember {
 
         /* ===== FINISH MNEMONIC SHARING ===== */
 
+        let my_group_id = self.group_id;
         let key_mates = self.member_attending.clone();
-        let party_keys = temp_party_keys;
-        todo!("mostly ordinary keygen");
+        let key_mates_others = {
+            let mut res = key_mates.clone();
+            res.remove(&my_id);
+            res
+        };
+        let member_id_to_idx = {
+            let mut members: Vec<usize> = self.member_attending.iter().cloned().collect();
+            members.sort();
+            let mut res = SparseVec::new();
+            for (idx, member_id) in members.iter().enumerate() {
+                res.insert(*member_id, idx);
+            }
+            res
+        };
+        let config: Parameters = Parameters {
+            threshold: (self.key_quorum - 1) as u16,
+            share_count: key_mates.len() as u16,
+        };
 
+        let party_keys = temp_party_keys;
+        let (com, decom) = party_keys.phase1_broadcast_phase3_proof_of_correct_key();
+
+        purpose = "com";
+        self.postmsg_mcast(key_mates.iter(), purpose, &com)
+            .await
+            .catch_()?;
+        let com_svec: SparseVec<KeyGenBroadcastMessage1> = self
+            .getmsg_mcast(key_mates.iter(), purpose)
+            .await
+            .catch_()?;
+
+        purpose = "decom";
+        self.postmsg_mcast(key_mates.iter(), purpose, &decom)
+            .await
+            .catch_()?;
+        let decom_svec: SparseVec<KeyGenDecommitMessage1> = self
+            .getmsg_mcast(key_mates.iter(), purpose)
+            .await
+            .catch_()?;
+
+        let aeskey_svec: SparseVec<BigInt> = {
+            let mut res = SparseVec::new();
+            for (member_id, decom) in decom_svec.iter() {
+                let aeskey = decom.y_i.clone() * party_keys.u_i.clone();
+                let aeskey = aeskey.x_coord().ifnone_()?;
+                res.insert(*member_id, aeskey);
+            }
+            res
+        };
+
+        let y_svec = {
+            let mut res = SparseVec::new();
+            for (member_id, decom) in decom_svec.iter() {
+                res.insert(*member_id, decom.y_i.clone());
+            }
+            res
+        };
+
+        let y_sum: Point<Secp256k1> = y_svec.iter().fold(Point::zero(), |sum, (_, y)| sum + y);
+        assert_throw!(y_sum == expected_y_sum, "Invalid mnemonic");
+
+        println!("Exchanged commitment to ephemeral public keys.");
+
+        let (vss_scheme, secret_share_vec, _) = party_keys
+            .phase1_verify_com_phase3_verify_correct_key_phase2_distribute(
+                &config,
+                &decom_svec.values_sorted_by_key_asc(),
+                &com_svec.values_sorted_by_key_asc(),
+            )
+            .catch_()?;
+
+        let secret_share_svec = {
+            let mut res: SparseVec<Scalar<Secp256k1>> = SparseVec::new();
+            for (member_id, idx) in member_id_to_idx.iter() {
+                res.insert(*member_id, secret_share_vec[*idx].clone());
+            }
+            res
+        };
+
+        println!("Generated secret shares.");
+
+        purpose = "secret share aes-p2p";
+        for member_id in key_mates_others.iter() {
+            let key: Vec<u8> = BigInt::to_bytes(&aeskey_svec[member_id]);
+            let plain: Vec<u8> = BigInt::to_bytes(&secret_share_svec[member_id].to_bigint());
+            let aead: AEAD = aes_encrypt(&key, &plain).catch_()?;
+            self.postmsg_p2p(*member_id, purpose, &aead)
+                .await
+                .catch_()?;
+        }
+        let aead_others_svec: SparseVec<AEAD> = self
+            .getmsg_mcast(key_mates_others.iter(), purpose)
+            .await
+            .catch_()?;
+
+        let party_shares_svec = {
+            let mut res = SparseVec::new();
+            res.insert(my_id, secret_share_svec[&my_id].clone());
+            for (member_id, aead) in aead_others_svec.iter() {
+                let key = aeskey_svec[member_id].to_bytes();
+                let plain = aes_decrypt(&key, &aead).catch_()?;
+                let party_share: Scalar<Secp256k1> = Scalar::from(BigInt::from_bytes(&plain));
+                res.insert(*member_id, party_share);
+            }
+            res
+        };
+
+        println!("Exchanged secret shares.");
+
+        purpose = "vss commitment";
+        self.postmsg_mcast(key_mates.iter(), purpose, &vss_scheme)
+            .await
+            .catch_()?;
+        let vss_scheme_svec: SparseVec<VerifiableSS<Secp256k1>> = self
+            .getmsg_mcast(key_mates.iter(), purpose)
+            .await
+            .catch_()?;
+
+        println!("Exchanged VSS commitments.");
+
+        let y_vec = y_svec.values_sorted_by_key_asc();
+        let (shared_keys, dlog_proof) = party_keys
+            .phase2_verify_vss_construct_keypair_phase3_pok_dlog(
+                &config,
+                &y_vec,
+                &party_shares_svec.values_sorted_by_key_asc(),
+                &vss_scheme_svec.values_sorted_by_key_asc(),
+                my_id as u16,
+            )
+            .catch_()?;
+
+        purpose = "dlog proof";
+        self.postmsg_mcast(key_mates.iter(), purpose, &dlog_proof)
+            .await
+            .catch_()?;
+        let dlog_proof_svec: SparseVec<DLogProof<Secp256k1, Sha256>> = self
+            .getmsg_mcast(key_mates.iter(), purpose)
+            .await
+            .catch_()?;
+
+        println!("Exchanged DLog proofs.");
+
+        Keys::verify_dlog_proofs(&config, &dlog_proof_svec.values_sorted_by_key_asc(), &y_vec)
+            .catch_()?;
+
+        println!("Verified DLog proofs.");
+
+        let paillier_key_svec: SparseVec<EncryptionKey> = com_svec // plkey_i = bc_i.e
+            .iter()
+            .map(|(member_id, com)| (*member_id, com.e.clone()))
+            .collect();
+
+        let keystore = KeyStore {
+            party_keys,
+            shared_keys,
+            chain_code,
+            vss_scheme_svec,
+            paillier_key_svec,
+            key_arch: KeyArch::default(),
+            member_id: my_id,
+        };
+        Ok(keystore)
     }
 }

@@ -48,6 +48,8 @@ async fn main() -> Outcome<()> {
 
     let keystore = member.algo_keygen().await.catch_()?;
     println!("{:#?}", keystore);
+    // TODO: add key arch to keystore
+    // TODO: save to file
 
     Ok(())
 }

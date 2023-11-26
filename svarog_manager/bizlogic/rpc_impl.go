@@ -644,7 +644,7 @@ func (srv *SessionManager) GetMessage(
 		err = db.
 			Where("session_id = ? AND member_id_src = ? AND member_id_dst = ? AND purpose = ?",
 				req.SessionId, req.MemberIdSrc, req.MemberIdDst, req.Purpose).
-			First(&msg).
+			Limit(1).Find(&msg).
 			Error
 		if err != nil {
 			// Avoid spamming logs with "record not found" errors.
