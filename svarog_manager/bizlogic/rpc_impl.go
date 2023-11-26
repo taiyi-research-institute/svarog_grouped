@@ -655,6 +655,11 @@ func (srv *SessionManager) GetMessage(
 			resp.Body = make([]byte, 0)
 		} else {
 			resp.Body = msg.Body
+			err = db.
+				Where("session_id = ? AND member_id_src = ? AND member_id_dst = ? AND purpose = ?",
+					req.SessionId, req.MemberIdSrc, req.MemberIdDst, req.Purpose).
+				Delete(msg).
+				Error
 		}
 	}
 
