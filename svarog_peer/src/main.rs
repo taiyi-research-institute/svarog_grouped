@@ -1,11 +1,16 @@
+use blake2::{digest::consts::U16, Blake2b, Digest};
 use sqlx::{Row, SqlitePool};
+use std::cmp::{max, min};
 use svarog_grpc::prelude::{prost::Message, tonic::transport::Server};
 use svarog_grpc::protogen::svarog::mpc_peer_server::MpcPeerServer;
+use svarog_grpc::protogen::svarog::Signatures;
 use svarog_grpc::protogen::svarog::{
-    mpc_peer_server::MpcPeer, JoinSessionRequest, SessionConfig, SessionFruit, SessionId, Void,
-    Whistle,
+    mpc_peer_server::MpcPeer, JoinSessionRequest, SessionFruit, SessionId, Void, Whistle,
 };
-use svarog_mpc_sdk::{mpc_member, MpcMember, SessionFruitValue};
+use svarog_mpc_sdk::gg18::{AlgoKeygen, AlgoSign, KeyArch, KeyStore};
+use svarog_mpc_sdk::{now, CompressAble, DecompressAble, MpcMember, SessionFruitValue};
+use tokio::fs::File;
+use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tonic::{async_trait, Request, Response};
 use xuanmi_base_support::*;
 
@@ -67,11 +72,9 @@ impl MpcPeer for MpcPeerService {
     ) -> Result<Response<Void>, tonic::Status> {
         let req = request.into_inner();
         let sql = "SELECT COUNT(session_id) AS count FROM session WHERE session_id = ? AND member_name = ?";
-        let session_id = req.session_id.clone();
-        let member_name = req.member_name.clone();
         let row = sqlx::query(sql)
-            .bind(&session_id)
-            .bind(&member_name)
+            .bind(&req.session_id)
+            .bind(&req.member_name)
             .fetch_one(&self.sqlite_pool)
             .await
             .map_err(|err| tonic::Status::internal(err.to_string()))?;
@@ -83,15 +86,15 @@ impl MpcPeer for MpcPeerService {
         let mpc_member = MpcMember::new(&self.mpc_sesmon_hostport)
             .await
             .map_err(|e| tonic::Status::internal(e.to_string()))?;
-        let ses_conf = mpc_member
-            .fetch_session_config(&session_id)
+        let conf = mpc_member
+            .fetch_session_config(&req.session_id)
             .await
             .map_err(|e| tonic::Status::internal(e.to_string()))?;
-        let expire_at = ses_conf.expire_before_finish;
+        let expire_at = conf.expire_before_finish;
 
         let mut reshare0 = false;
         let mut reshare1 = false;
-        for group in ses_conf.groups.iter() {
+        for group in conf.groups.iter() {
             for member in group.members.iter() {
                 if &member.member_name == &req.member_name {
                     if group.is_reshare {
@@ -110,80 +113,129 @@ impl MpcPeer for MpcPeerService {
 
         if reshare0 {
             // execute mpc algo in another thread.
-            let mut mpc_member0 = mpc_member.clone();
-            mpc_member0
-                .use_session_config(&ses_conf, &req.member_name, false)
+            let mut mpc_member_ = mpc_member.clone();
+            mpc_member_
+                .use_session_config(&conf, &req.member_name, false)
                 .map_err(|e| tonic::Status::internal(e.to_string()))?;
 
             let db = self.sqlite_pool.clone();
-            let sid_thlocal = session_id.clone();
-            let mn_thlocal = member_name.clone();
+            let conf_ = conf.clone();
+            let req_ = req.clone();
             tokio::spawn(async move {
-                tokio::time::sleep(tokio::time::Duration::from_secs(15)).await;
+                let mut fruit = SessionFruit::default();
+                match conf.session_type.as_str() {
+                    "keygen" => {
+                        let mut keystore = mpc_member_
+                            .algo_keygen()
+                            .await
+                            .map_err(|e| tonic::Status::internal(e.to_string()))
+                            .unwrap();
+                        keystore.key_arch = KeyArch::from(&conf_);
+
+                        let buf = keystore.compress().unwrap();
+                        let path = if req_.key_name.is_empty() {
+                            format!("{}@{}.keystore", &req_.member_name, conf.session_id)
+                        } else {
+                            format!("{}@{}.keystore", &req_.member_name, &req_.key_name)
+                        };
+                        let mut file = File::create(&path).await.unwrap();
+                        file.write_all(&buf).await.unwrap();
+
+                        let root_xpub = keystore.attr_root_xpub().unwrap();
+                        fruit = SessionFruit {
+                            value: Some(SessionFruitValue::RootXpub(root_xpub)),
+                        };
+                    }
+                    "sign" => {
+                        let tasks = conf_.to_sign.unwrap().tx_hashes.clone();
+                        assert!(tasks.len() > 0, "No task to sign.");
+                        if tasks.len() > 1 {
+                            todo!("Batch sign not ready yet");
+                        }
+                        assert!(tasks.len() == 1, "Batch sign not ready yet.");
+
+                        let path = &format!("{}@{}.keystore", &req_.member_name, &req_.key_name);
+                        let mut file = File::open(path).await.unwrap();
+                        let mut buf: Vec<u8> = Vec::new();
+                        file.read_to_end(&mut buf).await.unwrap();
+                        let keystore: KeyStore = buf.decompress().unwrap();
+
+                        let root_xpub = keystore.attr_root_xpub().unwrap();
+                        let minutes = now() / 60;
+                        let minutes_min = min(minutes, minutes - 3);
+                        let minutes_max = max(minutes, minutes + 3);
+                        let mut allow_to_use = false;
+                        for minute in minutes_min..=minutes_max {
+                            let text = format!("{}{}", &root_xpub, minute);
+                            let mut hasher: Blake2b<U16> = Blake2b::new();
+                            hasher.update(text.as_bytes());
+                            let hash = hasher.finalize();
+                            let hex_hash = hex::encode(hash);
+                            if hex_hash == req_.token {
+                                allow_to_use = true;
+                                break;
+                            }
+                        }
+                        assert!(allow_to_use, "Wrong token. Not allowed to use this key.");
+
+                        // TODO: Ensure keyarch is same as session config
+
+                        let mut sigs = Vec::new();
+                        if tasks.len() == 1 {
+                            let sig = mpc_member_
+                                .algo_sign(&keystore, &tasks[0])
+                                .await
+                                .map_err(|e| tonic::Status::internal(e.to_string()))
+                                .unwrap();
+                            sigs.push(sig);
+                        } else {
+                            todo!("Batch sign not ready yet");
+                        }
+
+                        fruit = SessionFruit {
+                            value: Some(SessionFruitValue::Signatures(Signatures {
+                                signatures: sigs,
+                            })),
+                        };
+                    }
+                    "keygen_mnem" => {
+                        todo!("keygen_mnem not ready yet");
+                    }
+                    "reshare" => {
+                        todo!("reshare not ready yet");
+                    }
+                    _st => {
+                        panic!("invalid session type «{}»", _st);
+                    }
+                }
+                if conf_.session_type == "keygen" {
+                    let fruit = mpc_member_
+                        .algo_keygen()
+                        .await
+                        .map_err(|e| tonic::Status::internal(e.to_string()))
+                        .unwrap();
+                }
                 let sql = "UPDATE session SET fruit = ? WHERE session_id = ? AND member_name = ?";
-                let rxb = "xpub661MyMwAqRbcEptpGtn77MuxVtCqFWsJxHKEwQUR5bci3vAtMjdY1utK1XKTFjoSP4GKwtioQBicjDByasN6GZELYALsHhQ6dpHBxN6BNir".to_owned();
-                let fruit = SessionFruit {
-                    value: Some(SessionFruitValue::RootXpub(rxb)),
-                };
                 let fruit_bytes = fruit.encode_to_vec();
                 let _ = sqlx::query(sql)
                     .bind(fruit_bytes)
-                    .bind(sid_thlocal)
-                    .bind(mn_thlocal)
+                    .bind(&conf_.session_id)
+                    .bind(&req_.member_name)
                     .execute(&db)
                     .await
                     .unwrap();
             });
 
             if !reshare1 {
-                // insert session
-                let sql = "INSERT INTO session (session_id, member_name, expire_at) VALUES (?, ?)";
-                let _ = sqlx::query(sql)
-                    .bind(&session_id)
-                    .bind(&member_name)
-                    .bind(expire_at)
-                    .execute(&self.sqlite_pool)
-                    .await
-                    .map_err(|err| tonic::Status::internal(err.to_string()))?;
+                todo!("reshare not ready yet");
             }
         }
 
         if reshare1 {
             // execute mpc algo in another thread.
-            let mut mpc_member1 = mpc_member.clone();
-            mpc_member1
-                .use_session_config(&ses_conf, &req.member_name, true)
-                .map_err(|e| tonic::Status::internal(e.to_string()))?;
-
-            let db = self.sqlite_pool.clone();
-            let sid_thlocal = session_id.clone();
-            let mn_thlocal = member_name.clone();
-            tokio::spawn(async move {
-                tokio::time::sleep(tokio::time::Duration::from_secs(15)).await;
-                let sql = "UPDATE session SET fruit = ? WHERE session_id = ? AND member_name = ?";
-                let rxb = "xpub661MyMwAqRbcEptpGtn77MuxVtCqFWsJxHKEwQUR5bci3vAtMjdY1utK1XKTFjoSP4GKwtioQBicjDByasN6GZELYALsHhQ6dpHBxN6BNir".to_owned();
-                let fruit = SessionFruit {
-                    value: Some(SessionFruitValue::RootXpub(rxb)),
-                };
-                let fruit_bytes = fruit.encode_to_vec();
-                let _ = sqlx::query(sql)
-                    .bind(fruit_bytes)
-                    .bind(sid_thlocal)
-                    .bind(mn_thlocal)
-                    .execute(&db)
-                    .await
-                    .unwrap();
-            });
-
-            // insert session
-            let sql = "INSERT INTO session (session_id, member_name, expire_at) VALUES (?, ?)";
-            let _ = sqlx::query(sql)
-                .bind(&session_id)
-                .bind(&member_name)
-                .bind(expire_at)
-                .execute(&self.sqlite_pool)
-                .await
-                .map_err(|err| tonic::Status::internal(err.to_string()))?;
+            return Err(tonic::Status::unimplemented(
+                "«Reshare» not implemented yet",
+            ));
         }
 
         Ok(Response::new(Void {}))

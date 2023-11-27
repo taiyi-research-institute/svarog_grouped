@@ -12,12 +12,10 @@ deploy:
 	@tmux kill-session -t svarog || true
 	@tmux new-session -s svarog \
 		-n man -d ";" new-window \
-		-n p1 -d ";" new-window \
-		-n p2 -d ";"
+		-n peer -d ";"
 	@sleep 1
 	@tmux send-keys -t svarog:man "cd $(shell pwd)/out && ./svarog_manager.run" C-m
-	@tmux send-keys -t svarog:p1 "cd $(shell pwd)/out && ./svarog_peer.run" C-m
-	@tmux send-keys -t svarog:p2 "cd $(shell pwd)/out && ./svarog_peer.run" C-m
+	@tmux send-keys -t svarog:peer "cd $(shell pwd)/out && ./svarog_peer.run" C-m
 
 # aliases of target `proto`
 protobuf: proto

@@ -185,11 +185,10 @@ impl AlgoSign for MpcMember {
             let g_w_i = Keys::update_commitments_to_xi(
                 &xi_com_svec[member_id],
                 &vss_scheme_svec[member_id],
-                (my_id - 1) as u16,
+                (member_id - 1) as u16,
                 &sign_mates_vec_u16_minus_1,
             );
-            // TODO: Why is this assertion failing?
-            // assert_throw!(mb_w.b_proof.pk.clone() == g_w_i);
+            assert_throw!(mb_w.b_proof.pk.clone() == g_w_i);
             alpha_svec.insert(*member_id, alpha_ij_gamma.0);
             mu_svec.insert(*member_id, alpha_ij_wi.0);
         }
@@ -335,6 +334,7 @@ impl AlgoSign for MpcMember {
             .output_signature(&s_i_svec.values_by_key_asc())
             .unwrap();
         check_sig(&sig.r, &sig.s, &message_bn, &tweak_pk).catch_()?;
+        check_sig0(&sig.r, &sig.s, &message_bn, &tweak_pk).catch_()?;
 
         println!("Finish phase5(e)");
 
