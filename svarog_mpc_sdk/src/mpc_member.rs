@@ -13,6 +13,7 @@ use xuanmi_base_support::*;
 
 #[derive(Clone)]
 pub struct MpcMember {
+    pub member_name: String,
     pub member_id: usize,
     pub group_id: usize,
     pub member_attending: HashSet<usize>,
@@ -37,6 +38,7 @@ pub enum MpcPeer<'a, C: IntoIterator<Item = usize>> {
 impl MpcMember {
     pub async fn new(grpc_hostport: &str) -> Outcome<Self> {
         Ok(MpcMember {
+            member_name: "".to_string(),
             member_id: 0,
             group_id: 0,
             member_attending: HashSet::new(),
@@ -117,6 +119,7 @@ impl MpcMember {
         if member_name != "" {
             assert_throw!(self.member_id != 0, "Member not found in session config")
         }
+        self.member_name = member_name.to_string();
         self.session_id = ses_config.session_id.clone();
         self.expire_at = ses_config.expire_before_finish as u64;
         Ok(())

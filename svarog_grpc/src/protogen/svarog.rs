@@ -79,8 +79,8 @@ pub struct Signature {
     pub r: ::prost::alloc::vec::Vec<u8>,
     #[prost(bytes = "vec", tag = "2")]
     pub s: ::prost::alloc::vec::Vec<u8>,
-    #[prost(bool, tag = "3")]
-    pub v: bool,
+    #[prost(uint32, tag = "3")]
+    pub v: u32,
     #[prost(string, tag = "4")]
     pub derive_path: ::prost::alloc::string::String,
     #[prost(bytes = "vec", tag = "5")]

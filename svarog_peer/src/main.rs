@@ -1,12 +1,13 @@
 use blake2::{digest::consts::U16, Blake2b, Digest};
 use sqlx::{Row, SqlitePool};
 use std::cmp::{max, min};
+use std::path;
 use svarog_grpc::prelude::{prost::Message, tonic::transport::Server};
 use svarog_grpc::protogen::svarog::mpc_peer_server::MpcPeerServer;
-use svarog_grpc::protogen::svarog::Signatures;
 use svarog_grpc::protogen::svarog::{
     mpc_peer_server::MpcPeer, JoinSessionRequest, SessionFruit, SessionId, Void, Whistle,
 };
+use svarog_grpc::protogen::svarog::{SessionConfig, Signatures};
 use svarog_mpc_sdk::gg18::{AlgoKeygen, AlgoSign, KeyArch, KeyStore};
 use svarog_mpc_sdk::{now, CompressAble, DecompressAble, MpcMember, SessionFruitValue};
 use tokio::fs::File;
@@ -32,10 +33,16 @@ CREATE TABLE IF NOT EXISTS peer_session (
 impl MpcPeerService {
     pub async fn new(sqlite_db_path: &str, mpc_sesmon_hostport: &str) -> Outcome<Self> {
         let url = if sqlite_db_path == "" {
-            "sqlite://:memory:".to_owned()
+            "/dev/shm/mpc_peer.db".to_owned()
         } else {
-            format!("sqlite://{}", sqlite_db_path)
+            sqlite_db_path.to_owned()
         };
+        if path::Path::new(&url).exists() {
+            let _ = tokio::fs::remove_file(&url).await.catch_()?;
+        }
+        // create file
+        let _ = tokio::fs::File::create(&url).await.catch_()?;
+
         let sesmon: &str = if mpc_sesmon_hostport == "" {
             "localhost:9000"
         } else {
@@ -122,98 +129,35 @@ impl MpcPeer for MpcPeerService {
             let conf_ = conf.clone();
             let req_ = req.clone();
             tokio::spawn(async move {
-                let fruit: SessionFruit;
-                match conf.session_type.as_str() {
+                let key_name = &req_.key_name;
+                let token = &req_.token;
+
+                let fruit: SessionFruit = match conf.session_type.as_str() {
                     "keygen" => {
-                        let mut keystore = mpc_member_
-                            .algo_keygen()
+                        join_keygen_session(&mpc_member_, &conf_, key_name)
                             .await
-                            .map_err(|e| tonic::Status::internal(e.to_string()))
-                            .unwrap();
-                        keystore.key_arch = KeyArch::from(&conf_);
-
-                        let buf = keystore.compress().unwrap();
-                        let path = if req_.key_name.is_empty() {
-                            format!("{}@{}.keystore", &req_.member_name, conf.session_id)
-                        } else {
-                            format!("{}@{}.keystore", &req_.member_name, &req_.key_name)
-                        };
-                        let mut file = File::create(&path).await.unwrap();
-                        file.write_all(&buf).await.unwrap();
-
-                        let root_xpub = keystore.attr_root_xpub().unwrap();
-                        fruit = SessionFruit {
-                            value: Some(SessionFruitValue::RootXpub(root_xpub)),
-                        };
+                            .unwrap()
                     }
                     "sign" => {
-                        let tasks = conf_.to_sign.unwrap().tx_hashes.clone();
-                        assert!(tasks.len() > 0, "No task to sign.");
-                        if tasks.len() > 1 {
-                            todo!("Batch sign not ready yet");
-                        }
-                        assert!(tasks.len() == 1, "Batch sign not ready yet.");
-
-                        let path = &format!("{}@{}.keystore", &req_.member_name, &req_.key_name);
-                        let mut file = File::open(path).await.unwrap();
-                        let mut buf: Vec<u8> = Vec::new();
-                        file.read_to_end(&mut buf).await.unwrap();
-                        let keystore: KeyStore = buf.decompress().unwrap();
-
-                        let root_xpub = keystore.attr_root_xpub().unwrap();
-                        let minutes = now() / 60;
-                        let minutes_min = min(minutes, minutes - 3);
-                        let minutes_max = max(minutes, minutes + 3);
-                        let mut allow_to_use = false;
-                        for minute in minutes_min..=minutes_max {
-                            let text = format!("{}{}", &root_xpub, minute);
-                            let mut hasher: Blake2b<U16> = Blake2b::new();
-                            hasher.update(text.as_bytes());
-                            let hash = hasher.finalize();
-                            let hex_hash = hex::encode(hash);
-                            if hex_hash == req_.token {
-                                allow_to_use = true;
-                                break;
-                            }
-                        }
-                        assert!(allow_to_use, "Wrong token. Not allowed to use this key.");
-
-                        // TODO: Ensure keyarch is same as session config
-
-                        let mut sigs = Vec::new();
-                        if tasks.len() == 1 {
-                            let sig = mpc_member_
-                                .algo_sign(&keystore, &tasks[0])
-                                .await
-                                .map_err(|e| tonic::Status::internal(e.to_string()))
-                                .unwrap();
-                            sigs.push(sig);
-                        } else {
-                            todo!("Batch sign not ready yet");
-                        }
-
-                        fruit = SessionFruit {
-                            value: Some(SessionFruitValue::Signatures(Signatures {
-                                signatures: sigs,
-                            })),
-                        };
+                        join_sign_session(&mpc_member_, &conf_, key_name, token).await.unwrap()
                     }
                     "keygen_mnem" => {
-                        todo!("keygen_mnem not ready yet");
+                        todo!("«keygen_mnem» not implemented yet");
                     }
                     "reshare" => {
-                        todo!("reshare not ready yet");
+                        todo!("«reshare» not implemented yet");
                     }
                     _st => {
                         panic!("invalid session type «{}»", _st);
                     }
-                }
+                };
                 let sql = "INSERT INTO peer_session (session_id, member_name, expire_at, fruit) VALUES (?, ?, ?, ?)";
                 let fruit_bytes = fruit.encode_to_vec();
                 let _ = sqlx::query(sql)
-                    .bind(fruit_bytes)
                     .bind(&conf_.session_id)
                     .bind(&req_.member_name)
+                    .bind(expire_at)
+                    .bind(fruit_bytes)
                     .execute(&db)
                     .await
                     .unwrap();
@@ -268,4 +212,95 @@ impl MpcPeer for MpcPeerService {
 
         Ok(Response::new(Void {}))
     }
+}
+
+async fn join_keygen_session(
+    mpc_member: &MpcMember,
+    conf: &SessionConfig,
+    key_name: &str,
+) -> Outcome<SessionFruit> {
+    let mut keystore = mpc_member
+        .algo_keygen()
+        .await
+        .map_err(|e| tonic::Status::internal(e.to_string()))
+        .unwrap();
+    keystore.key_arch = KeyArch::from(conf);
+
+    let buf = keystore.compress().unwrap();
+    let path = if key_name.is_empty() {
+        format!("{}@{}.keystore", &mpc_member.member_name, conf.session_id)
+    } else {
+        format!("{}@{}.keystore", &mpc_member.member_name, key_name)
+    };
+    let mut file = File::create(&path).await.unwrap();
+    file.write_all(&buf).await.unwrap();
+
+    let root_xpub = keystore.attr_root_xpub().unwrap();
+    let fruit = SessionFruit {
+        value: Some(SessionFruitValue::RootXpub(root_xpub)),
+    };
+
+    Ok(fruit)
+}
+
+async fn join_sign_session(
+    mpc_member: &MpcMember,
+    conf: &SessionConfig,
+    key_name: &str,
+    token: &str,
+) -> Outcome<SessionFruit> {
+    let tasks = conf.to_sign.as_ref().unwrap().tx_hashes.clone();
+    assert!(tasks.len() > 0, "No task to sign.");
+    if tasks.len() > 1 {
+        todo!("Batch sign not ready yet");
+    }
+
+    let path = &format!("{}@{}.keystore", &mpc_member.member_name, key_name);
+    let mut file = File::open(path).await.unwrap();
+    let mut buf: Vec<u8> = Vec::new();
+    file.read_to_end(&mut buf).await.unwrap();
+    let keystore: KeyStore = buf.decompress().unwrap();
+
+    if false {
+        // TODO: Enable token check
+        let root_xpub = keystore.attr_root_xpub().unwrap();
+        let minutes = now() / 60;
+        let minutes_min = min(minutes, minutes - 3);
+        let minutes_max = max(minutes, minutes + 3);
+        let mut allow_to_use = false;
+        for minute in minutes_min..=minutes_max {
+            let text = format!("{}{}", &root_xpub, minute);
+            let mut hasher: Blake2b<U16> = Blake2b::new();
+            hasher.update(text.as_bytes());
+            let hash = hasher.finalize();
+            let hex_hash = hex::encode(hash);
+            if hex_hash == token {
+                allow_to_use = true;
+                break;
+            }
+        }
+        assert!(allow_to_use, "Wrong token. Not allowed to use this key.");
+    }
+
+    // TODO: Ensure keyarch is same as session config
+
+    let mut sigs = Vec::new();
+    if tasks.len() == 1 {
+        let sig = mpc_member
+            .algo_sign(&keystore, &tasks[0])
+            .await
+            .map_err(|e| tonic::Status::internal(e.to_string()))
+            .unwrap();
+        sigs.push(sig);
+    } else {
+        todo!("Batch sign not ready yet");
+    }
+
+    let fruit = SessionFruit {
+        value: Some(SessionFruitValue::Signatures(Signatures {
+            signatures: sigs,
+        })),
+    };
+
+    Ok(fruit)
 }

@@ -6,3 +6,5 @@
 3. Add reshare
 4. Add range proof
 5. Change to nested shamir
+
+https://github.com/Safeheron/integer-factorization

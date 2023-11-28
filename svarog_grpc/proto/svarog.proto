@@ -64,11 +64,11 @@ message Member {
 }
 
 message Signature {
-    bytes r = 1;
-    bytes s = 2;
-    bool  v = 3;
+    bytes  r = 1;
+    bytes  s = 2;
+    uint32 v = 3;
     string derive_path = 4;
-    bytes tx_hash = 5;
+    bytes  tx_hash = 5;
 }
 
 message Signatures {

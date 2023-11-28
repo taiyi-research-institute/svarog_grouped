@@ -341,7 +341,7 @@ impl AlgoSign for MpcMember {
         let signature = Signature {
             r: sig.r.to_bytes().to_vec(),
             s: sig.s.to_bytes().to_vec(),
-            v: sig.recid == 1,
+            v: sig.recid as u32,
             derive_path: derv_path,
             tx_hash,
         };
