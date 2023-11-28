@@ -9,6 +9,7 @@ build:
 	@BUILD_OUT_DIR="$(shell pwd)/out" make -C ./svarog_peer
 
 deploy:
+	@echo 1
 	@tmux kill-session -t svarog || true
 	@tmux new-session -s svarog \
 		-n man -d ";" new-window \

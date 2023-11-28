@@ -20,7 +20,7 @@ pub struct MpcPeerService {
 }
 
 const CREATE_TABLE: &str = r#"
-CREATE TABLE IF NOT EXISTS mpc_session (
+CREATE TABLE IF NOT EXISTS session (
     session_id CHAR(32) NOT NULL,
     member_name CHAR(128) NOT NULL,
     expire_at INT NOT NULL,
@@ -56,7 +56,7 @@ impl MpcPeerService {
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
-    let service = MpcPeerService::new("", "127.0.0.1:9000").await?;
+    let service = MpcPeerService::new("", "http://127.0.0.1:9000").await?;
     Server::builder()
         .add_service(MpcPeerServer::new(service))
         .serve("127.0.0.1:9001".parse().unwrap())
@@ -83,6 +83,7 @@ impl MpcPeer for MpcPeerService {
             return Err(tonic::Status::already_exists("session already joined"));
         }
 
+        println!("{}", self.mpc_sesmon_hostport);
         let mpc_member = MpcMember::new(&self.mpc_sesmon_hostport)
             .await
             .map_err(|e| tonic::Status::internal(e.to_string()))?;
@@ -122,7 +123,7 @@ impl MpcPeer for MpcPeerService {
             let conf_ = conf.clone();
             let req_ = req.clone();
             tokio::spawn(async move {
-                let mut fruit = SessionFruit::default();
+                let fruit;
                 match conf.session_type.as_str() {
                     "keygen" => {
                         let mut keystore = mpc_member_
@@ -142,6 +143,7 @@ impl MpcPeer for MpcPeerService {
                         file.write_all(&buf).await.unwrap();
 
                         let root_xpub = keystore.attr_root_xpub().unwrap();
+                        println!("root_xpub: {}", root_xpub);
                         fruit = SessionFruit {
                             value: Some(SessionFruitValue::RootXpub(root_xpub)),
                         };
@@ -202,33 +204,38 @@ impl MpcPeer for MpcPeerService {
                         todo!("keygen_mnem not ready yet");
                     }
                     "reshare" => {
-                        todo!("reshare not ready yet");
+                        todo!("reshare222 not ready yet");
                     }
                     _st => {
                         panic!("invalid session type «{}»", _st);
                     }
                 }
-                if conf_.session_type == "keygen" {
-                    let fruit = mpc_member_
-                        .algo_keygen()
-                        .await
-                        .map_err(|e| tonic::Status::internal(e.to_string()))
-                        .unwrap();
-                }
-                let sql = "UPDATE session SET fruit = ? WHERE session_id = ? AND member_name = ?";
+                // if conf_.session_type == "keygen" {
+                //     let fruit = mpc_member_
+                //         .algo_keygen()
+                //         .await
+                //         .map_err(|e| tonic::Status::internal(e.to_string()))
+                //         .unwrap();
+                // }
+                // let sql = "UPDATE session SET fruit = ? WHERE session_id = ? AND member_name = ?";
+                let sql = "INSERT INTO session (session_id, member_name, expire_at, fruit) VALUES (?, ?, ?, ?)";
                 let fruit_bytes = fruit.encode_to_vec();
+                println!("fruit_bytes: {:?}", fruit_bytes);
+                println!("session_id: {}", &conf_.session_id);
+                println!("member_name: {}", &req_.member_name);
                 let _ = sqlx::query(sql)
-                    .bind(fruit_bytes)
                     .bind(&conf_.session_id)
                     .bind(&req_.member_name)
+                    .bind(expire_at)
+                    .bind(fruit_bytes)
                     .execute(&db)
                     .await
                     .unwrap();
             });
 
-            if !reshare1 {
-                todo!("reshare not ready yet");
-            }
+            // if !reshare1 {
+            //     todo!("reshare111 not ready yet");
+            // }
         }
 
         if reshare1 {

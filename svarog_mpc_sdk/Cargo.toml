@@ -88,11 +88,11 @@ branch = "main"
 [build-dependencies]
 cargo-patch = "0.3"
 
-[profile.release]
-opt-level = 3
-lto = true
-codegen-units = 1
-strip = true
+# [profile.release]
+# opt-level = 3
+# lto = true
+# codegen-units = 1
+# strip = true
 
 [patch.crates-io]
 curv-kzen = { path = "../patches/curv-kzen-0.9.0" }
