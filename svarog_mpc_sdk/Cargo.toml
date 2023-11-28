@@ -41,7 +41,7 @@ prost-types = "0.11.9"
 rand_core = "0.6"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
-tiny-bip39 = "1" # provides bip39::*, not equivalent to crate `bip39`
+tiny-bip39 = "1"                                                # provides bip39::*, not equivalent to crate `bip39`
 uuid = { version = "0.8", features = ["v4"] }
 tokio = { version = "1.32.0", features = ["full"] }
 tokio-stream = "0.1"
@@ -85,14 +85,13 @@ git = "ssh://git@github.com/taiyi-research-institute/xuanmi_base_support.git"
 branch = "main"
 # path = "../../xuanmi_base_support"
 
-[build-dependencies]
-cargo-patch = "0.3"
-
 [profile.release]
 opt-level = 3
-lto = true
-codegen-units = 1
-strip = true
+# lto = true
+# codegen-units = 1
+# strip = true
 
+# Any dependencies that depend on curv-kzen-0.9.0 will use this patched version.
+# Thus we no longer need to "download the dependencies and modify their Cargo.toml".
 [patch.crates-io]
-curv-kzen = { path = "../patches/curv-kzen-0.9.0" }
+curv-kzen = { version = "0.9.0", path = "../patches/curv-kzen-0.9.0" }

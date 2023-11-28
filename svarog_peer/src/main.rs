@@ -20,7 +20,7 @@ pub struct MpcPeerService {
 }
 
 const CREATE_TABLE: &str = r#"
-CREATE TABLE IF NOT EXISTS mpc_session (
+CREATE TABLE IF NOT EXISTS peer_session (
     session_id CHAR(32) NOT NULL,
     member_name CHAR(128) NOT NULL,
     expire_at INT NOT NULL,
@@ -56,7 +56,7 @@ impl MpcPeerService {
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
-    let service = MpcPeerService::new("", "127.0.0.1:9000").await?;
+    let service = MpcPeerService::new("", "http://127.0.0.1:9000").await?;
     Server::builder()
         .add_service(MpcPeerServer::new(service))
         .serve("127.0.0.1:9001".parse().unwrap())
@@ -71,7 +71,7 @@ impl MpcPeer for MpcPeerService {
         request: Request<JoinSessionRequest>,
     ) -> Result<Response<Void>, tonic::Status> {
         let req = request.into_inner();
-        let sql = "SELECT COUNT(session_id) AS count FROM session WHERE session_id = ? AND member_name = ?";
+        let sql = "SELECT COUNT(session_id) AS count FROM peer_session WHERE session_id = ? AND member_name = ?";
         let row = sqlx::query(sql)
             .bind(&req.session_id)
             .bind(&req.member_name)
@@ -122,7 +122,7 @@ impl MpcPeer for MpcPeerService {
             let conf_ = conf.clone();
             let req_ = req.clone();
             tokio::spawn(async move {
-                let mut fruit = SessionFruit::default();
+                let fruit: SessionFruit;
                 match conf.session_type.as_str() {
                     "keygen" => {
                         let mut keystore = mpc_member_
@@ -208,14 +208,7 @@ impl MpcPeer for MpcPeerService {
                         panic!("invalid session type «{}»", _st);
                     }
                 }
-                if conf_.session_type == "keygen" {
-                    let fruit = mpc_member_
-                        .algo_keygen()
-                        .await
-                        .map_err(|e| tonic::Status::internal(e.to_string()))
-                        .unwrap();
-                }
-                let sql = "UPDATE session SET fruit = ? WHERE session_id = ? AND member_name = ?";
+                let sql = "INSERT INTO peer_session (session_id, member_name, expire_at, fruit) VALUES (?, ?, ?, ?)";
                 let fruit_bytes = fruit.encode_to_vec();
                 let _ = sqlx::query(sql)
                     .bind(fruit_bytes)
@@ -225,10 +218,6 @@ impl MpcPeer for MpcPeerService {
                     .await
                     .unwrap();
             });
-
-            if !reshare1 {
-                todo!("reshare not ready yet");
-            }
         }
 
         if reshare1 {
@@ -246,7 +235,7 @@ impl MpcPeer for MpcPeerService {
         request: Request<SessionId>,
     ) -> Result<Response<SessionFruit>, tonic::Status> {
         let mut fruit = SessionFruit::default();
-        let sql = "SELECT fruit FROM session WHERE session_id = ?";
+        let sql = "SELECT fruit FROM peer_session WHERE session_id = ?";
         let row = sqlx::query(sql)
             .bind(request.into_inner().session_id)
             .fetch_optional(&self.sqlite_pool)
@@ -270,7 +259,7 @@ impl MpcPeer for MpcPeerService {
             // TODO: Call real abort session
         }
 
-        let sql = "DELETE FROM session WHERE session_id = ?";
+        let sql = "DELETE FROM peer_session WHERE session_id = ?";
         sqlx::query(sql)
             .bind(&request.into_inner().session_id)
             .execute(&self.sqlite_pool)

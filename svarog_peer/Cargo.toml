@@ -24,19 +24,13 @@ path = "../svarog_mpc_sdk"
 git = "ssh://git@github.com/taiyi-research-institute/xuanmi_base_support"
 branch = "main"
 
-[patch.crates-io]
-curv-kzen = { path = "./target/patch/curv-kzen-0.9.0" }
-
-[package.metadata.patch.curv-kzen]
-version = "0.9.0"
-patches = [{ path = "patches/curv-kzen.patch", source = "GithubPrDiff" }]
-allow = ["dead_code", "unused_imports", "unused_variables", "unused_mut"]
-
-[build-dependencies]
-cargo-patch = "0.3"
-
 [profile.release]
 opt-level = 3
-lto = true
-codegen-units = 1
-strip = true
+# lto = true
+# codegen-units = 1
+# strip = true
+
+# Any dependencies that depend on curv-kzen-0.9.0 will use this patched version.
+# Thus we no longer need to "download the dependencies and modify their Cargo.toml".
+[patch.crates-io] 
+curv-kzen = { version = "0.9.0", path = "../patches/curv-kzen-0.9.0" }

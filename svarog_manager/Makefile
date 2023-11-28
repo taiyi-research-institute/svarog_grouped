@@ -3,6 +3,7 @@
 all: svarog_manager 
 
 svarog_manager:
+	@go mod tidy
 	@gofmt -s -w .
 	@`which echo` -e '\033[1;35m[gofmt]\033[0m' \
 		`readlink -f .`
