@@ -15,7 +15,7 @@ deploy:
 		-n peer -d ";"
 	@sleep 1
 	@tmux send-keys -t svarog:man "cd $(shell pwd)/out && ./svarog_manager.run" C-m
-	@tmux send-keys -t svarog:peer "cd $(shell pwd)/out && ./svarog_peer.run" C-m
+	@tmux send-keys -t svarog:peer "cd $(shell pwd)/out && ./svarog_peer.run --log debug" C-m
 
 # aliases of target `proto`
 protobuf: proto

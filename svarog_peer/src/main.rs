@@ -1,4 +1,5 @@
 use blake2::{digest::consts::U16, Blake2b, Digest};
+use clap::{Arg, ArgAction, Command};
 use sqlx::{Row, SqlitePool};
 use std::cmp::{max, min};
 use std::path;
@@ -13,7 +14,33 @@ use svarog_mpc_sdk::{now, CompressAble, DecompressAble, MpcMember, SessionFruitV
 use tokio::fs::File;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tonic::{async_trait, Request, Response};
-use xuanmi_base_support::*;
+use xuanmi_base_support::{tracing::*, *};
+
+#[tokio::main]
+async fn main() -> Outcome<()> {
+    let matches = Command::new("mpc_peer")
+        .arg(
+            Arg::new("log_level")
+                .short('l')
+                .long("log")
+                .default_value("info")
+                .action(ArgAction::Set),
+        )
+        .get_matches();
+    let log_level = matches.get_one::<String>("log_level").unwrap().to_owned();
+    let available_log_level = vec!["trace", "debug", "info", "warn", "error"];
+    assert_throw!(available_log_level.contains(&log_level.as_str()));
+
+    let mpc_sesmon_url = "http://127.0.0.1:9000";
+    let service = MpcPeerService::new("", mpc_sesmon_url).await.catch_()?;
+
+    Server::builder()
+        .add_service(MpcPeerServer::new(service))
+        .serve("127.0.0.1:9001".parse().unwrap())
+        .await
+        .catch_()?;
+    Ok(())
+}
 
 pub struct MpcPeerService {
     pub sqlite_pool: SqlitePool,
@@ -38,17 +65,17 @@ impl MpcPeerService {
             sqlite_db_path.to_owned()
         };
         if path::Path::new(&url).exists() {
-            let _ = tokio::fs::remove_file(&url).await.catch_()?;
+            let _ = tokio::fs::remove_file(&url).await.catch("", &url)?;
         }
         // create file
-        let _ = tokio::fs::File::create(&url).await.catch_()?;
+        let _ = tokio::fs::File::create(&url).await.catch("", &url)?;
 
         let sesmon: &str = if mpc_sesmon_hostport == "" {
             "localhost:9000"
         } else {
             mpc_sesmon_hostport
         };
-        let sqlite_pool = SqlitePool::connect(&url).await.catch_()?;
+        let sqlite_pool = SqlitePool::connect(&url).await.catch("", &url)?;
         let _ = sqlx::query(CREATE_TABLE)
             .execute(&sqlite_pool)
             .await
@@ -59,16 +86,6 @@ impl MpcPeerService {
             mpc_sesmon_hostport: sesmon.to_owned(),
         })
     }
-}
-
-#[tokio::main]
-async fn main() -> Result<(), Box<dyn std::error::Error>> {
-    let service = MpcPeerService::new("", "http://127.0.0.1:9000").await?;
-    Server::builder()
-        .add_service(MpcPeerServer::new(service))
-        .serve("127.0.0.1:9001".parse().unwrap())
-        .await?;
-    Ok(())
 }
 
 #[async_trait]
@@ -133,14 +150,22 @@ impl MpcPeer for MpcPeerService {
                 let token = &req_.token;
 
                 let fruit: SessionFruit = match conf.session_type.as_str() {
-                    "keygen" => {
-                        join_keygen_session(&mpc_member_, &conf_, key_name)
-                            .await
-                            .unwrap()
-                    }
-                    "sign" => {
-                        join_sign_session(&mpc_member_, &conf_, key_name, token).await.unwrap()
-                    }
+                    "keygen" => match run_keygen_session(&mpc_member_, &conf_, key_name).await {
+                        Ok(fruit) => fruit,
+                        Err(err) => {
+                            error!("Failed to run «keygen» session (member {} at session {} with key {}) --\n {}",
+                                &mpc_member_.member_name, &conf_.session_id, key_name, err);
+                            panic!("{:#?}", err);
+                        }
+                    },
+                    "sign" => match run_sign_session(&mpc_member_, &conf_, key_name, token).await {
+                        Ok(fruit) => fruit,
+                        Err(err) => {
+                            error!("Failed to run «sign» session (member {} at session {} with key {}) --\n {}",
+                            &mpc_member_.member_name, &conf_.session_id, key_name, err);
+                            panic!("{:#?}", err);
+                        }
+                    },
                     "keygen_mnem" => {
                         todo!("«keygen_mnem» not implemented yet");
                     }
@@ -153,14 +178,17 @@ impl MpcPeer for MpcPeerService {
                 };
                 let sql = "INSERT INTO peer_session (session_id, member_name, expire_at, fruit) VALUES (?, ?, ?, ?)";
                 let fruit_bytes = fruit.encode_to_vec();
-                let _ = sqlx::query(sql)
+                let _res = sqlx::query(sql)
                     .bind(&conf_.session_id)
                     .bind(&req_.member_name)
                     .bind(expire_at)
                     .bind(fruit_bytes)
                     .execute(&db)
-                    .await
-                    .unwrap();
+                    .await;
+                if let Err(err) = _res {
+                    error!("Failed to insert fruit to db -- {}", err);
+                    panic!("{:#?}", err);
+                };
             });
         }
 
@@ -178,18 +206,33 @@ impl MpcPeer for MpcPeerService {
         &self,
         request: Request<SessionId>,
     ) -> Result<Response<SessionFruit>, tonic::Status> {
+        let req = request.into_inner();
         let mut fruit = SessionFruit::default();
         let sql = "SELECT fruit FROM peer_session WHERE session_id = ?";
-        let row = sqlx::query(sql)
-            .bind(request.into_inner().session_id)
+        let _row = sqlx::query(sql)
+            .bind(&req.session_id)
             .fetch_optional(&self.sqlite_pool)
-            .await
-            .map_err(|err| tonic::Status::internal(err.to_string()))?;
+            .await;
+        if let Err(err) = _row {
+            error!(
+                "Failed to query fruit of session {} from db -- {}",
+                &req.session_id, &err
+            );
+            return Err(tonic::Status::internal(err.to_string()));
+        };
+        let row = _row.unwrap();
         if let Some(row) = row {
             let fruit_bytes: Vec<u8> = row.get("fruit");
             // decode bytes to protobuf message, using prost
-            fruit = SessionFruit::decode(fruit_bytes.as_slice())
-                .map_err(|err| tonic::Status::internal(err.to_string()))?;
+            let _fruit = SessionFruit::decode(fruit_bytes.as_slice());
+            if let Err(err) = _fruit {
+                error!(
+                    "Failed to decode fruit of session {} from db -- {}",
+                    &req.session_id, &err
+                );
+                return Err(tonic::Status::internal(err.to_string()));
+            };
+            fruit = _fruit.unwrap();
         }
 
         Ok(Response::new(fruit))
@@ -214,28 +257,24 @@ impl MpcPeer for MpcPeerService {
     }
 }
 
-async fn join_keygen_session(
+async fn run_keygen_session(
     mpc_member: &MpcMember,
     conf: &SessionConfig,
     key_name: &str,
 ) -> Outcome<SessionFruit> {
-    let mut keystore = mpc_member
-        .algo_keygen()
-        .await
-        .map_err(|e| tonic::Status::internal(e.to_string()))
-        .unwrap();
+    let mut keystore = mpc_member.algo_keygen().await.catch_()?;
     keystore.key_arch = KeyArch::from(conf);
 
-    let buf = keystore.compress().unwrap();
+    let buf = keystore.compress().catch_()?;
     let path = if key_name.is_empty() {
         format!("{}@{}.keystore", &mpc_member.member_name, conf.session_id)
     } else {
         format!("{}@{}.keystore", &mpc_member.member_name, key_name)
     };
-    let mut file = File::create(&path).await.unwrap();
-    file.write_all(&buf).await.unwrap();
+    let mut file = File::create(&path).await.catch_()?;
+    file.write_all(&buf).await.catch_()?;
 
-    let root_xpub = keystore.attr_root_xpub().unwrap();
+    let root_xpub = keystore.attr_root_xpub().catch_()?;
     let fruit = SessionFruit {
         value: Some(SessionFruitValue::RootXpub(root_xpub)),
     };
@@ -243,27 +282,27 @@ async fn join_keygen_session(
     Ok(fruit)
 }
 
-async fn join_sign_session(
+async fn run_sign_session(
     mpc_member: &MpcMember,
     conf: &SessionConfig,
     key_name: &str,
     token: &str,
 ) -> Outcome<SessionFruit> {
-    let tasks = conf.to_sign.as_ref().unwrap().tx_hashes.clone();
-    assert!(tasks.len() > 0, "No task to sign.");
+    let tasks = conf.to_sign.as_ref().ifnone_()?.tx_hashes.clone();
+    assert_throw!(tasks.len() > 0, "No task to sign.");
     if tasks.len() > 1 {
-        todo!("Batch sign not ready yet");
+        throw!("Unimplemented", "Batch sign not ready yet");
     }
 
     let path = &format!("{}@{}.keystore", &mpc_member.member_name, key_name);
-    let mut file = File::open(path).await.unwrap();
+    let mut file = File::open(path).await.catch_()?;
     let mut buf: Vec<u8> = Vec::new();
-    file.read_to_end(&mut buf).await.unwrap();
-    let keystore: KeyStore = buf.decompress().unwrap();
+    file.read_to_end(&mut buf).await.catch_()?;
+    let keystore: KeyStore = buf.decompress().catch_()?;
 
     if false {
         // TODO: Enable token check
-        let root_xpub = keystore.attr_root_xpub().unwrap();
+        let root_xpub = keystore.attr_root_xpub().catch_()?;
         let minutes = now() / 60;
         let minutes_min = min(minutes, minutes - 3);
         let minutes_max = max(minutes, minutes + 3);
@@ -279,21 +318,17 @@ async fn join_sign_session(
                 break;
             }
         }
-        assert!(allow_to_use, "Wrong token. Not allowed to use this key.");
+        assert_throw!(allow_to_use, "Wrong token. Not allowed to use this key.");
     }
 
     // TODO: Ensure keyarch is same as session config
 
     let mut sigs = Vec::new();
     if tasks.len() == 1 {
-        let sig = mpc_member
-            .algo_sign(&keystore, &tasks[0])
-            .await
-            .map_err(|e| tonic::Status::internal(e.to_string()))
-            .unwrap();
+        let sig = mpc_member.algo_sign(&keystore, &tasks[0]).await.catch_()?;
         sigs.push(sig);
     } else {
-        todo!("Batch sign not ready yet");
+        throw!("Unimplemented", "Batch sign not ready yet");
     }
 
     let fruit = SessionFruit {
