@@ -1,0 +1,121 @@
+syntax = "proto3";
+option go_package = "proto/gen";
+package svarog;
+
+// A peer handles multiple shards of multiple keys.
+// All called by biz
+service MpcPeer {
+    rpc JoinSession(JoinSessionRequest) returns (Void);
+    rpc GetSessionFruit(SessionId) returns (SessionFruit);
+    
+    // When biz detected wrong Tx, call this to abort session.
+    rpc AbortSession(Whistle) returns (Void);
+}
+
+service MpcSessionManager {
+    // In the request, `session_id`, `group_id`s, `member_id`s
+    // are set to "zero-value"s.
+    rpc NewSession(SessionConfig) returns (SessionConfig);
+    
+    // (up) called by biz
+    // (down) called by peer
+    
+    rpc GetSessionConfig(SessionId) returns (SessionConfig);
+    rpc BlowWhistle(Whistle) returns (Void);
+    rpc PostMessage(Message) returns (Void);
+    rpc GetMessage(Message) returns (Message);
+    rpc TerminateSession(SessionTermination) returns (Void);
+}
+
+message SessionConfig { 
+    string session_id = 1; // When creating session, set to ""
+    string session_type = 2; // one of "keygen", "sign", "reshare"
+    uint64 key_quorum = 3;
+    uint64 reshare_key_quorum = 4;
+    repeated Group groups = 5;
+    int64 expire_before_finish = 6; // When creating session, set to 0
+    int64 expire_after_finish = 7; // When creating session, set to 0
+
+    ToSign to_sign = 17; // [] means unset
+}
+
+message JoinSessionRequest {
+    string session_id = 1;
+    string member_name = 2; // Name of MPC participant
+    string key_name = 3; // Name of root private key
+    // `(member_name, key_name)` uniquely identifies a key.
+
+    string token = 4; // Used for authentication
+    string mnemonics = 5; // Only end-user provides this. Leave blank for API calls.
+}
+
+message Group {
+    string group_name = 1;
+    uint64 group_id = 2; // When creating session, set to 0
+    uint64 group_quorum = 3;
+    bool is_reshare = 4;
+    repeated Member members = 5;
+}
+
+message Member {
+    string member_name = 1;
+    uint64 member_id = 2; // When creating session, set to 0
+    bool is_attending = 3;
+}
+
+message Signature {
+    bytes r = 1;
+    bytes s = 2;
+    bool  v = 3;
+    string derive_path = 4;
+    bytes tx_hash = 5;
+}
+
+message Signatures {
+    repeated Signature signatures = 1;
+}
+
+message Void {}
+
+message TxHash {
+    string derive_path = 1;
+    bytes tx_hash = 2;
+}
+
+message ToSign {
+    repeated TxHash tx_hashes = 1;
+}
+
+message SessionId {
+    string session_id = 1;
+}
+
+message Whistle {
+    string session_id = 1;
+    string message = 2;
+}
+
+message Message {
+    string session_id = 1;
+    string purpose = 2; // formerly "round"
+    uint64 member_id_src = 3;
+    uint64 member_id_dst = 4;
+    bytes body = 5; // if set to [], remaining fields are used as index.
+}
+
+message SessionFruit {
+    oneof value {
+        string root_xpub = 1; // keygen or reshare result
+        Signatures signatures = 2; // sign result
+    }
+}
+
+message SessionTermination {
+    string session_id = 1;
+    uint64 member_id = 2; // member_id
+    SessionFruit fruit = 3;
+}
+
+message BizCallbackUrl {
+    string heartbeat = 1;
+}
