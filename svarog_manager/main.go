@@ -3,6 +3,7 @@ package main
 import (
 	"fmt"
 	"net"
+	"os"
 
 	"github.com/BurntSushi/toml"
 	"google.golang.org/grpc"
@@ -31,6 +32,13 @@ func NewDefaultConfig() *Config {
 
 func main() {
 	conf := NewDefaultConfig()
+	// create config file if not exist, avoid panic
+	if _, err := os.Stat("svarog.toml"); os.IsNotExist(err) {
+		_, err := os.Create("svarog.toml")
+		if err != nil {
+			panic(err)
+		}
+	}
 	_, err := toml.DecodeFile("svarog.toml", &conf)
 	if err != nil {
 		panic(err)
