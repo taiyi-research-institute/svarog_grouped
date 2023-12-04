@@ -12,38 +12,37 @@ import (
 	pb "svarog_manager/proto/gen"
 )
 
-type Config struct {
-	Grpc struct {
-		Port uint16
+var conf = struct {
+	Peer struct {
+		GrpcHost   string
+		GrpcPort   uint16
+		SqlitePath string
+	}
+	Sesman struct {
+		GrpcHost   string
+		GrpcPort   uint16
+		SqlitePath string
 	}
 	Logging struct {
 		Level string
 		Dir   string
 	}
-}
-
-func NewDefaultConfig() *Config {
-	conf := new(Config)
-	conf.Grpc.Port = 9000
-	conf.Logging.Level = "debug"
-	conf.Logging.Dir = "./"
-	return conf
-}
+}{}
 
 func main() {
-	conf := NewDefaultConfig()
-	// create config file if not exist, avoid panic
-	if _, err := os.Stat("svarog.toml"); os.IsNotExist(err) {
-		_, err := os.Create("svarog.toml")
-		if err != nil {
-			panic(err)
-		}
+	if _, err := os.Stat("mpc_service_config.toml"); os.IsNotExist(err) {
+		panic("`mpc_service_config.toml` not found.\n" +
+			"Originally, this file accompanies the executable.\n")
 	}
-	_, err := toml.DecodeFile("svarog.toml", &conf)
+	_, err := toml.DecodeFile("mpc_service_config.toml", &conf)
 	if err != nil {
-		panic(err)
+		panic("Cannot decode `mpc_service_config.toml`. DO NOT rename or remove any field.\n" + err.Error())
 	}
-	grpc_hostport := fmt.Sprintf("localhost:%d", conf.Grpc.Port)
+	grpc_hostport := fmt.Sprintf(
+		"%s:%d",
+		conf.Sesman.GrpcHost,
+		conf.Sesman.GrpcPort,
+	)
 	sock, err := net.Listen("tcp", grpc_hostport)
 	if err != nil {
 		panic(err)
@@ -58,6 +57,9 @@ func main() {
 	grpcServer := grpc.NewServer(opt...)
 	pb.RegisterMpcSessionManagerServer(grpcServer, bizCore)
 
-	fmt.Println("Svarog GRPC server is running at ", grpc_hostport, " ...")
-	grpcServer.Serve(sock) // hopefully, forever run
+	fmt.Println("Mpc Session Manager will listen at", grpc_hostport, "...")
+	err = grpcServer.Serve(sock) // hopefully, forever run
+	if err != nil {
+		panic("Mpc Session Manager is down. Reason:\n" + err.Error())
+	}
 }

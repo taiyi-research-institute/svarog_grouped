@@ -32,6 +32,9 @@ func (srv *SessionManager) NewSession(
 		if req.SessionType == "keygen" {
 			_members := make(map[string]bool)
 			_groups := make(map[string]bool)
+			if req.KeyQuorum < 1 { // Key quorum is at least one.
+				return nil, errors.New("Key quorum should be at least one")
+			}
 			for _, group := range req.Groups {
 				if group.IsReshare { // No group is reshare.
 					return nil, errors.New("Any keygen group should not reshare")
@@ -40,6 +43,7 @@ func (srv *SessionManager) NewSession(
 					return nil, errors.New("Every keygen group should be unique")
 				}
 				_groups[group.GroupName] = true
+				_group_member_count := uint64(0)
 				for _, member := range group.Members {
 					if _members[member.MemberName] { // Every member is unique.
 						return nil, errors.New("Every keygen member should be unique")
@@ -48,13 +52,20 @@ func (srv *SessionManager) NewSession(
 					if !member.IsAttending { // Every member is attending.
 						return nil, errors.New("Every keygen member should attend")
 					}
+					_group_member_count += 1
+				}
+				if group.GroupQuorum > _group_member_count {
+					return nil, errors.New("Group quorum should not exceed the count of members")
 				}
 			}
 			if len(_groups) < 1 { // At least one group.
 				return nil, errors.New("At least one keygen group is required")
 			}
 			if len(_members) < 1 { // At least two members.
-				return nil, errors.New("At lest one keygen members is required")
+				return nil, errors.New("At lest one keygen member is required")
+			}
+			if req.KeyQuorum > uint64(len(_members)) {
+				return nil, errors.New("Key quorum should not exceed the count of members")
 			}
 		} else if req.SessionType == "sign" {
 			_cdd := make(map[string]bool)
@@ -63,6 +74,9 @@ func (srv *SessionManager) NewSession(
 			_gatt := make(map[string]uint64)
 			_katt := uint64(0)
 			_kq := req.KeyQuorum
+			if _kq < 1 {
+				return nil, errors.New("Key quorum should be at least one")
+			}
 			for _, group := range req.Groups {
 				if group.IsReshare { // No group is reshare.
 					return nil, errors.New("Any sign group should not reshare")
@@ -145,6 +159,10 @@ func (srv *SessionManager) NewSession(
 			{ // Analogous to keygen
 				_members := make(map[string]bool)
 				_groups := make(map[string]bool)
+				_kq := req.ReshareKeyQuorum
+				if _kq < 1 {
+					return nil, errors.New("Reshare key quorum should be at least one")
+				}
 				for _, group := range req.Groups {
 					if !group.IsReshare {
 						continue
@@ -153,6 +171,7 @@ func (srv *SessionManager) NewSession(
 						return nil, errors.New("Every reshare group should be unique")
 					}
 					_groups[group.GroupName] = true
+					_group_member_count := uint64(0)
 					for _, member := range group.Members {
 						if _members[member.MemberName] { // Every member is unique.
 							return nil, errors.New("Every reshare member should be unique")
@@ -161,6 +180,10 @@ func (srv *SessionManager) NewSession(
 						if !member.IsAttending { // Every member is attending.
 							return nil, errors.New("Every reshare member should attend")
 						}
+						_group_member_count += 1
+					}
+					if group.GroupQuorum > _group_member_count {
+						return nil, errors.New("Reshare group quorum should not exceed the count of members")
 					}
 				}
 				if len(_groups) < 1 { // At least one group.
@@ -168,6 +191,9 @@ func (srv *SessionManager) NewSession(
 				}
 				if len(_members) < 1 { // At least one member.
 					return nil, errors.New("At lest one reshare member is required")
+				}
+				if _kq > uint64(len(_members)) {
+					return nil, errors.New("Reshare key quorum should not exceed the count of members")
 				}
 			}
 		}

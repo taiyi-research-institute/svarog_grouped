@@ -1,4 +1,3 @@
-use chrono::format;
 use clap::{arg, Arg, ArgAction, Command, Parser};
 use svarog_mpc_sdk::{
     gg18::{AlgoKeygen, AlgoSign, KeyStore},
@@ -52,7 +51,7 @@ async fn main() -> Outcome<()> {
         .catch_()?;
 
     let key_name = "keygen".to_owned();
-    let path = &format!("{}@{}.keystore", member_name, &key_name);
+    let path = &format!("assets/{}@{}.keystore", member_name, &key_name);
     println!("Loading keystore from: {}", path);
     let mut file = File::open(path).await.catch_()?;
     let mut buf: Vec<u8> = Vec::new();

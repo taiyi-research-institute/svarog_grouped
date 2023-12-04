@@ -52,7 +52,7 @@ impl MpcMember {
 
             session_id: "".to_string(),
             expire_at: 0,
-            grpc_hostport: grpc_hostport.to_owned(),
+            grpc_hostport: format!("http://{}", grpc_hostport),
         })
     }
 

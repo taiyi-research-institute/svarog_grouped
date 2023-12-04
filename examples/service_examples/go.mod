@@ -1,6 +1,6 @@
-module mpctest
+module service_examples
 
-go 1.20
+go 1.21
 
 require (
 	google.golang.org/grpc v1.59.0
@@ -8,7 +8,9 @@ require (
 )
 
 require (
+	github.com/akamensky/argparse v1.4.0
 	github.com/golang/protobuf v1.5.3 // indirect
+	golang.org/x/crypto v0.12.0
 	golang.org/x/net v0.14.0 // indirect
 	golang.org/x/sys v0.11.0 // indirect
 	golang.org/x/text v0.12.0 // indirect

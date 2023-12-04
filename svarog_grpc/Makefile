@@ -14,11 +14,21 @@ rust:
 		`readlink -f ./`"/{src,Cargo.toml}"
 
 go:
-	@protoc --go_out=$(SVAROG_GO_PROTOGEN) --go-grpc_out=$(SVAROG_GO_PROTOGEN) --proto_path=proto proto/*.proto
+	@protoc --go_out=$(SVAROG_GO_PROTOGEN) \
+		--go-grpc_out=$(SVAROG_GO_PROTOGEN) \
+		--proto_path=proto proto/*.proto
 	@`which echo` -e '\033[1;35m[protoc go]\033[0m' \
 		`readlink -f proto` \
 		'\n\t\033[1;35m->\033[0m' \
 		`readlink -f $(SVAROG_GO_PROTOGEN)/proto/gen`
+	@protoc --go_out=$(SVAROG_GO_EXAMPLE_PROTOGEN) \
+		--go-grpc_out=$(SVAROG_GO_EXAMPLE_PROTOGEN) \
+		--proto_path=proto proto/*.proto
+	@`which echo` -e '\033[1;35m[protoc go]\033[0m' \
+		`readlink -f proto` \
+		'\n\t\033[1;35m->\033[0m' \
+		`readlink -f $(SVAROG_GO_EXAMPLE_PROTOGEN)/proto/gen`
+
 
 clean:
 	@rm -rf protoc_rust.run

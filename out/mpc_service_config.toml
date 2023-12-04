@@ -1,0 +1,13 @@
+[peer]
+GrpcHost = "127.0.0.1"
+GrpcPort = 9001
+SqlitePath = "/dev/shm/svarog_peer.db"
+
+[sesman]
+GrpcHost = "127.0.0.1"
+GrpcPort = 9000
+SqlitePath = "/dev/shm/svarog_sesman.db"
+
+[logging]
+Level = "debug"
+Dir = "./logs"

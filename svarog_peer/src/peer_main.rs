@@ -1,5 +1,4 @@
 use blake2::{digest::consts::U16, Blake2b, Digest};
-use clap::{Arg, ArgAction, Command};
 use sqlx::{Row, SqlitePool};
 use std::cmp::{max, min};
 use std::path;
@@ -15,36 +14,52 @@ use tokio::fs::File;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tonic::{async_trait, Request, Response};
 use xuanmi_base_support::{tracing::*, *};
+mod config;
+use config::MpcServiceConfig;
+const CONF_PATH: &'static str = "mpc_service_config.toml";
 
 #[tokio::main]
 async fn main() -> Outcome<()> {
-    let matches = Command::new("mpc_peer")
-        .arg(
-            Arg::new("log_level")
-                .short('l')
-                .long("log")
-                .default_value("info")
-                .action(ArgAction::Set),
+    let conf_path_existing = path::Path::new(CONF_PATH).exists();
+    assert_throw!(
+        conf_path_existing,
+        &format!(
+            "{}\n{}",
+            "`mpc_service_config.toml` not found.",
+            "Originally, this file accompanies the executable."
         )
-        .get_matches();
-    let log_level = matches.get_one::<String>("log_level").unwrap().to_owned();
-    let available_log_level = vec!["trace", "debug", "info", "warn", "error"];
-    assert_throw!(available_log_level.contains(&log_level.as_str()));
+    );
+    let conf_str = tokio::fs::read_to_string(CONF_PATH).await.catch_()?;
+    let conf: MpcServiceConfig = toml::from_str(&conf_str).catch(
+        "InvalidConfigFile",
+        "Cannot decode `mpc_service_config.toml`. DO NOT rename or remove any field.",
+    )?;
 
-    let mpc_sesmon_url = "http://127.0.0.1:9000";
-    let service = MpcPeerService::new("", mpc_sesmon_url).await.catch_()?;
+    let available_log_level = vec!["trace", "debug", "info", "warn", "error"];
+    assert_throw!(available_log_level.contains(&conf.logging.Level.as_str()));
+    init_tracer!("logs", "mpc_peer.log", &conf.logging.Level);
+
+    let service = MpcPeerService::new(
+        &conf.peer.SqlitePath,
+        &conf.sesman.GrpcHost,
+        conf.sesman.GrpcPort,
+    )
+    .await
+    .catch("CannotCreatePeerService", "")?;
+    let listen_at = format!("{}:{}", &conf.peer.GrpcHost, conf.peer.GrpcPort);
+    println!("MpcPeerService will listen at {}", &listen_at);
 
     Server::builder()
         .add_service(MpcPeerServer::new(service))
-        .serve("127.0.0.1:9001".parse().unwrap())
+        .serve(listen_at.parse().unwrap())
         .await
-        .catch_()?;
+        .catch("Mpc Peer is down", "")?;
     Ok(())
 }
 
 pub struct MpcPeerService {
     pub sqlite_pool: SqlitePool,
-    pub mpc_sesmon_hostport: String,
+    pub sesman_hostport: String,
 }
 
 const CREATE_TABLE: &str = r#"
@@ -58,32 +73,27 @@ CREATE TABLE IF NOT EXISTS peer_session (
 "#;
 
 impl MpcPeerService {
-    pub async fn new(sqlite_db_path: &str, mpc_sesmon_hostport: &str) -> Outcome<Self> {
-        let url = if sqlite_db_path == "" {
-            "/dev/shm/mpc_peer.db".to_owned()
-        } else {
-            sqlite_db_path.to_owned()
-        };
-        if path::Path::new(&url).exists() {
-            let _ = tokio::fs::remove_file(&url).await.catch("", &url)?;
+    pub async fn new(sqlite_path: &str, sesman_host: &str, sesman_port: u16) -> Outcome<Self> {
+        if path::Path::new(&sqlite_path).exists() {
+            let _ = tokio::fs::remove_file(sqlite_path)
+                .await
+                .catch("CannotRemoveFile", sqlite_path)?;
         }
-        // create file
-        let _ = tokio::fs::File::create(&url).await.catch("", &url)?;
+        let _ = tokio::fs::File::create(sqlite_path)
+            .await
+            .catch("CannotCreateFile", sqlite_path)?;
 
-        let sesmon: &str = if mpc_sesmon_hostport == "" {
-            "localhost:9000"
-        } else {
-            mpc_sesmon_hostport
-        };
-        let sqlite_pool = SqlitePool::connect(&url).await.catch("", &url)?;
+        let sqlite_pool = SqlitePool::connect(&sqlite_path)
+            .await
+            .catch("CannotConnectSqlite", sqlite_path)?;
         let _ = sqlx::query(CREATE_TABLE)
             .execute(&sqlite_pool)
             .await
-            .catch_()?;
+            .catch("CannotCreateTable", sqlite_path)?;
 
         Ok(Self {
             sqlite_pool,
-            mpc_sesmon_hostport: sesmon.to_owned(),
+            sesman_hostport: format!("{}:{}", sesman_host, sesman_port),
         })
     }
 }
@@ -95,6 +105,7 @@ impl MpcPeer for MpcPeerService {
         request: Request<JoinSessionRequest>,
     ) -> Result<Response<Void>, tonic::Status> {
         let req = request.into_inner();
+        println!("MpcPeer.JoinSession -- {:#?}", &req);
         let sql = "SELECT COUNT(session_id) AS count FROM peer_session WHERE session_id = ? AND member_name = ?";
         let row = sqlx::query(sql)
             .bind(&req.session_id)
@@ -107,7 +118,7 @@ impl MpcPeer for MpcPeerService {
             return Err(tonic::Status::already_exists("session already joined"));
         }
 
-        let mpc_member = MpcMember::new(&self.mpc_sesmon_hostport)
+        let mpc_member = MpcMember::new(&self.sesman_hostport)
             .await
             .map_err(|e| tonic::Status::internal(e.to_string()))?;
         let conf = mpc_member
@@ -214,7 +225,7 @@ impl MpcPeer for MpcPeerService {
             .fetch_optional(&self.sqlite_pool)
             .await;
         if let Err(err) = _row {
-            error!(
+            println!(
                 "Failed to query fruit of session {} from db -- {}",
                 &req.session_id, &err
             );
@@ -262,14 +273,21 @@ async fn run_keygen_session(
     conf: &SessionConfig,
     key_name: &str,
 ) -> Outcome<SessionFruit> {
+    println!(
+        "member: {}, key_quorum: {}, ses_arch: {:#?}",
+        &mpc_member.member_name, &conf.key_quorum, &conf.groups
+    );
     let mut keystore = mpc_member.algo_keygen().await.catch_()?;
     keystore.key_arch = KeyArch::from(conf);
 
     let buf = keystore.compress().catch_()?;
     let path = if key_name.is_empty() {
-        format!("{}@{}.keystore", &mpc_member.member_name, conf.session_id)
+        format!(
+            "assets/{}@{}.keystore",
+            &mpc_member.member_name, conf.session_id
+        )
     } else {
-        format!("{}@{}.keystore", &mpc_member.member_name, key_name)
+        format!("assets/{}@{}.keystore", &mpc_member.member_name, key_name)
     };
     let mut file = File::create(&path).await.catch_()?;
     file.write_all(&buf).await.catch_()?;
@@ -288,13 +306,17 @@ async fn run_sign_session(
     key_name: &str,
     token: &str,
 ) -> Outcome<SessionFruit> {
+    println!(
+        "member: {}, key_quorum: {}, ses_arch: {:#?}",
+        &mpc_member.member_name, &conf.key_quorum, &conf.groups
+    );
     let tasks = conf.to_sign.as_ref().ifnone_()?.tx_hashes.clone();
     assert_throw!(tasks.len() > 0, "No task to sign.");
     if tasks.len() > 1 {
         throw!("Unimplemented", "Batch sign not ready yet");
     }
 
-    let path = &format!("{}@{}.keystore", &mpc_member.member_name, key_name);
+    let path = &format!("assets/{}@{}.keystore", &mpc_member.member_name, key_name);
     let mut file = File::open(path).await.catch_()?;
     let mut buf: Vec<u8> = Vec::new();
     file.read_to_end(&mut buf).await.catch_()?;
