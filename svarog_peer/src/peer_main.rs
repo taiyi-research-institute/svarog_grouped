@@ -8,7 +8,7 @@ use svarog_grpc::protogen::svarog::{
     mpc_peer_server::MpcPeer, JoinSessionRequest, SessionFruit, SessionId, Void, Whistle,
 };
 use svarog_grpc::protogen::svarog::{SessionConfig, Signatures};
-use svarog_mpc_sdk::gg18::{AlgoKeygen, AlgoSign, KeyArch, KeyStore};
+use svarog_mpc_sdk::biz_algo::{AlgoKeygen, AlgoSign, KeyArch, KeyStore};
 use svarog_mpc_sdk::{now, CompressAble, DecompressAble, MpcMember, SessionFruitValue};
 use tokio::fs::File;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
