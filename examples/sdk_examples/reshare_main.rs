@@ -1,6 +1,5 @@
 use clap::{arg, Arg, ArgAction, Command, Parser};
-use svarog_mpc_sdk::{gg18::AlgoKeygen, MpcMember};
-use xuanmi_base_support::*;
+use svarog_mpc_sdk::{biz_algo::AlgoKeygen, exception::*, MpcMember};
 
 #[derive(Parser, Debug)]
 #[command(author, version, about, long_about = None)]

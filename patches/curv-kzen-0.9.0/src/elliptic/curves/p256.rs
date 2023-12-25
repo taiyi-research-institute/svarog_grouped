@@ -68,6 +68,7 @@ pub struct Secp256r1Scalar {
     fe: zeroize::Zeroizing<SK>,
 }
 
+#[allow(dead_code)]
 #[derive(Clone, Copy, Debug)]
 pub struct Secp256r1Point {
     purpose: &'static str,

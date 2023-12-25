@@ -1,4 +1,5 @@
 // replace (bitcoin::util::bip32, secp256k1) by (bip32, k256 v0.11.0)
+use crate::{assert_throw, exception::*, throw};
 use bip32::{
     ChainCode, ChildNumber, DerivationPath, ExtendedKey, ExtendedKeyAttrs, Prefix, PrivateKey,
     PublicKey, XPrv, XPub, KEY_SIZE,
@@ -7,7 +8,6 @@ use curv::elliptic::curves::{secp256_k1::Secp256k1, Point, Scalar};
 use hmac::{Hmac, Mac, NewMac};
 use sha2::Sha512;
 use std::{convert::TryInto, str::FromStr};
-use xuanmi_base_support::*;
 
 // struct HmacSha512(hmac::Hmac<sha2::Sha512>);
 // impl Mac for HmacSha512 {}
@@ -146,9 +146,9 @@ pub fn algo_get_hd_key(
 mod tests {
     use std::ops::Deref;
 
-    use crate::gg18::algo_get_hd_key;
+    use crate::biz_algo::algo_get_hd_key;
+    use crate::{exception::*, throw};
     use curv::elliptic::curves::{secp256_k1::Secp256k1, Point};
-    use xuanmi_base_support::*;
     const TE: &str = "TestException";
 
     #[test]

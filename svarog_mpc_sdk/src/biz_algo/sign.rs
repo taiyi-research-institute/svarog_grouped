@@ -4,6 +4,12 @@
 
 use std::collections::{HashMap, HashSet};
 
+use super::*;
+use crate::{
+    assert_throw,
+    gg18::{mta::*, multi_party_ecdsa::*},
+    mpc_member::*, throw,
+};
 use curv::{
     arithmetic::{BasicOps, Converter, Modulo},
     cryptographic_primitives::proofs::{
@@ -12,14 +18,9 @@ use curv::{
     elliptic::curves::{secp256_k1::Secp256k1, Point, Scalar},
     BigInt,
 };
-use multi_party_ecdsa::{protocols::multi_party_ecdsa::gg_2018::party_i::*, utilities::mta::*};
 use sha2::Sha256;
 use svarog_grpc::protogen::svarog::{Signature, TxHash};
 use tonic::async_trait;
-use xuanmi_base_support::*;
-
-use super::*;
-use crate::{mpc_member::*, util::*};
 
 #[async_trait]
 pub trait AlgoSign {
@@ -35,19 +36,7 @@ impl AlgoSign for MpcMember {
 
         let my_id = self.member_id;
         let my_group_id = self.group_id;
-        let key_mates: HashSet<usize> = self.member_group.keys().cloned().collect();
-        let (key_indices, key_indices_reverse) = {
-            let mut res1 = SparseVec::new();
-            let mut res2 = SparseVec::new();
-            let mut members: Vec<usize> = key_mates.iter().cloned().collect();
-            members.sort();
-            for (idx, member_id) in members.iter().enumerate() {
-                res1.insert(*member_id, idx);
-                res2.insert(idx, *member_id);
-            }
-            (res1, res2)
-        };
-        let sign_mates: HashSet<usize> = self.member_attending.iter().cloned().collect();
+        let sign_mates: HashSet<u16> = self.member_attending.iter().cloned().collect();
         let sign_mates_others = {
             let mut res = sign_mates.clone();
             res.remove(&my_id);
@@ -69,35 +58,24 @@ impl AlgoSign for MpcMember {
 
         println!("computed tweak sk and pk");
 
-        let sign_mates_vec_u16_minus_1 = {
-            // sign_mates in asc order as u16
-            let mut res: Vec<u16> = sign_mates.iter().map(|x| (*x - 1) as u16).collect();
-            res.sort();
-            res
-        };
-        let mut vss_scheme_svec = keystore.vss_scheme_svec.clone();
-        let _1 = vss_scheme_svec[&1].commitments[0].clone();
+        let mut vss_scheme_kv = keystore.vss_scheme_kv.clone();
+        let _1 = vss_scheme_kv[&1].commitments[0].clone();
         let _2 = Point::generator() * &tweak_sk;
-        vss_scheme_svec.get_mut(&1).unwrap().commitments[0] = _1 + _2;
+        vss_scheme_kv.get_mut(&1).unwrap().commitments[0] = _1 + _2;
 
         let mut private =
             PartyPrivate::set_private(keystore.party_keys.clone(), keystore.shared_keys.clone());
         private = private.update_private_key(&Scalar::<Secp256k1>::zero(), &tweak_sk);
-        let sign_keys = SignKeys::create(
-            &private,
-            &vss_scheme_svec[&my_id],
-            my_id as u16 - 1,
-            &sign_mates_vec_u16_minus_1,
-        );
+        let sign_keys = SignKeys::create(&private, my_id, &sign_mates).catch_()?;
 
         let (bc1, decom1) = sign_keys.phase1_broadcast();
-        let (ma, _) = MessageA::a(&sign_keys.k_i, &keystore.party_keys.ek, &[]);
+        let (ma, _) = MessageA::a(&sign_keys.k_i, &keystore.party_keys.ek, &HashMap::new());
 
         let mut purpose = "bc1";
         self.postmsg_mcast(sign_mates.iter(), purpose, &bc1)
             .await
             .catch_()?;
-        let bc1_svec: HashMap<usize, SignBroadcastPhase1> = self
+        let bc1_kv: HashMap<u16, SignBroadcastPhase1> = self
             .getmsg_mcast(sign_mates.iter(), purpose)
             .await
             .catch_()?;
@@ -106,7 +84,7 @@ impl AlgoSign for MpcMember {
         self.postmsg_mcast(sign_mates_others.iter(), purpose, &ma)
             .await
             .catch_()?;
-        let ma_svec: HashMap<usize, MessageA> = self
+        let ma_kv: HashMap<u16, MessageA> = self
             .getmsg_mcast(sign_mates_others.iter(), purpose)
             .await
             .catch_()?;
@@ -114,48 +92,48 @@ impl AlgoSign for MpcMember {
         println!("Exchanged commitments");
 
         // do MtA/MtAwc (c) (d)
-        let mut mb_gamma_svec: SparseVec<MessageB> = SparseVec::new();
-        let mut mb_w_svec: SparseVec<MessageB> = SparseVec::new();
-        let mut beta_svec: SparseVec<Scalar<Secp256k1>> = SparseVec::new();
-        let mut ni_svec: SparseVec<Scalar<Secp256k1>> = SparseVec::new();
+        let mut mb_gamma_kv: HashMap<u16, MessageB> = HashMap::new();
+        let mut mb_w_kv: HashMap<u16, MessageB> = HashMap::new();
+        let mut beta_kv: HashMap<u16, Scalar<Secp256k1>> = HashMap::new();
+        let mut ni_kv: HashMap<u16, Scalar<Secp256k1>> = HashMap::new();
         for member_id in sign_mates_others.iter() {
             let (mb_gamma, beta_gamma, _, _) = MessageB::b(
                 &sign_keys.gamma_i,
-                &keystore.paillier_key_svec[member_id],
-                ma_svec[member_id].clone(),
-                &[],
+                &keystore.paillier_key_kv[member_id],
+                ma_kv[member_id].clone(),
+                &HashMap::new(),
             )
             .unwrap();
             let (mb_w, beta_wi, _, _) = MessageB::b(
                 &sign_keys.w_i,
-                &keystore.paillier_key_svec[member_id],
-                ma_svec[member_id].clone(),
-                &[],
+                &keystore.paillier_key_kv[member_id],
+                ma_kv[member_id].clone(),
+                &HashMap::new(),
             )
             .unwrap();
-            mb_gamma_svec.insert(*member_id, mb_gamma);
-            mb_w_svec.insert(*member_id, mb_w);
-            beta_svec.insert(*member_id, beta_gamma);
-            ni_svec.insert(*member_id, beta_wi);
+            mb_gamma_kv.insert(*member_id, mb_gamma);
+            mb_w_kv.insert(*member_id, mb_w);
+            beta_kv.insert(*member_id, beta_gamma);
+            ni_kv.insert(*member_id, beta_wi);
         }
 
         println!("Finished MtA/MtAwc (c) (d)");
 
         purpose = "mb_gamma";
-        for (member_id, mb_gamma) in mb_gamma_svec.iter() {
+        for (member_id, mb_gamma) in mb_gamma_kv.iter() {
             self.postmsg_p2p(*member_id, purpose, mb_gamma)
                 .await
                 .catch_()?;
         }
-        let mb_gamma_svec: SparseVec<MessageB> = self
+        let mb_gamma_kv: HashMap<u16, MessageB> = self
             .getmsg_mcast(sign_mates_others.iter(), purpose)
             .await
             .catch_()?;
         purpose = "mb_w";
-        for (member_id, mb_w) in mb_w_svec.iter() {
+        for (member_id, mb_w) in mb_w_kv.iter() {
             self.postmsg_p2p(*member_id, purpose, mb_w).await.catch_()?;
         }
-        let mb_w_svec: SparseVec<MessageB> = self
+        let mb_w_kv: HashMap<u16, MessageB> = self
             .getmsg_mcast(sign_mates_others.iter(), purpose)
             .await
             .catch_()?;
@@ -163,42 +141,29 @@ impl AlgoSign for MpcMember {
         println!("Exchanged Paillier ciphertext");
 
         // do MtA (e) / MtAwc (e) (f)
-        let xi_com_svec = {
-            let mut res: SparseVec<Point<Secp256k1>> = SparseVec::new();
-            let xi_com_vec = Keys::get_commitments_to_xi(&vss_scheme_svec.values_by_key_asc());
-            for (idx, xi_com) in xi_com_vec.iter().enumerate() {
-                res.insert(key_indices_reverse[&idx], xi_com.clone());
-            }
-            res
-        };
-        let mut alpha_svec: SparseVec<Scalar<Secp256k1>> = SparseVec::new();
-        let mut mu_svec: SparseVec<Scalar<Secp256k1>> = SparseVec::new();
+        let xi_com_kv: HashMap<u16, Point<Secp256k1>> =
+            Keys::get_commitments_to_xi(&vss_scheme_kv).catch_()?;
+        let mut alpha_kv: HashMap<u16, Scalar<Secp256k1>> = HashMap::new();
+        let mut mu_kv: HashMap<u16, Scalar<Secp256k1>> = HashMap::new();
         for member_id in sign_mates_others.iter() {
-            let mb_gamma = mb_gamma_svec[member_id].clone();
+            let mb_gamma = mb_gamma_kv[member_id].clone();
             let alpha_ij_gamma = mb_gamma
                 .verify_proofs_get_alpha(&keystore.party_keys.dk, &sign_keys.k_i)
                 .unwrap();
-            let mb_w = mb_w_svec[member_id].clone();
+            let mb_w = mb_w_kv[member_id].clone();
             let alpha_ij_wi = mb_w
                 .verify_proofs_get_alpha(&keystore.party_keys.dk, &sign_keys.k_i)
                 .unwrap();
-            let g_w_i = Keys::update_commitments_to_xi(
-                &xi_com_svec[member_id],
-                &vss_scheme_svec[member_id],
-                (member_id - 1) as u16,
-                &sign_mates_vec_u16_minus_1,
-            );
+            let g_w_i =
+                Keys::update_commitments_to_xi(*member_id, &xi_com_kv[member_id], &sign_mates)
+                    .catch_()?;
             assert_throw!(mb_w.b_proof.pk.clone() == g_w_i);
-            alpha_svec.insert(*member_id, alpha_ij_gamma.0);
-            mu_svec.insert(*member_id, alpha_ij_wi.0);
+            alpha_kv.insert(*member_id, alpha_ij_gamma.0);
+            mu_kv.insert(*member_id, alpha_ij_wi.0);
         }
 
-        let delta = sign_keys.phase2_delta_i(
-            &alpha_svec.values_by_key_asc(),
-            &beta_svec.values_by_key_asc(),
-        );
-        let sigma =
-            sign_keys.phase2_sigma_i(&mu_svec.values_by_key_asc(), &ni_svec.values_by_key_asc());
+        let delta = sign_keys.phase2_delta_i(&alpha_kv, &beta_kv).catch_()?;
+        let sigma = sign_keys.phase2_sigma_i(&mu_kv, &ni_kv).catch_()?;
 
         println!("Finished MtA/MtAwc (e) (f)");
 
@@ -206,11 +171,11 @@ impl AlgoSign for MpcMember {
         self.postmsg_mcast(sign_mates.iter(), purpose, &delta)
             .await
             .catch_()?;
-        let delta_svec: SparseVec<Scalar<Secp256k1>> = self
+        let delta_kv: HashMap<u16, Scalar<Secp256k1>> = self
             .getmsg_mcast(sign_mates.iter(), purpose)
             .await
             .catch_()?;
-        let delta_inv = SignKeys::phase3_reconstruct_delta(&delta_svec.values_by_key_asc());
+        let delta_inv = SignKeys::phase3_reconstruct_delta(&delta_kv).catch_()?;
 
         println!("Finished exchanging delta_i");
 
@@ -219,24 +184,23 @@ impl AlgoSign for MpcMember {
             self.postmsg_mcast(sign_mates_others.iter(), purpose, &decom1)
                 .await
                 .catch_()?;
-            let decom1_svec: SparseVec<SignDecommitPhase1> = self
+            let decom1_kv: HashMap<u16, SignDecommitPhase1> = self
                 .getmsg_mcast(sign_mates_others.iter(), purpose)
                 .await
                 .catch_()?;
-            let decom1_vec: Vec<SignDecommitPhase1> = decom1_svec.values_by_key_asc();
-            let bc1_vec: Vec<SignBroadcastPhase1> = {
-                let mut tmp = bc1_svec.clone();
+            let bc1_kv: HashMap<u16, SignBroadcastPhase1> = {
+                let mut tmp = bc1_kv.clone();
                 tmp.remove(&my_id);
-                tmp.values_by_key_asc()
+                tmp
             };
-            let b_proof_vec: Vec<&DLogProof<Secp256k1, Sha256>> = {
-                let mut tmp = SparseVec::new();
-                for (member_id, mb_gamma) in mb_gamma_svec.iter() {
+            let b_proof_kv: HashMap<u16, &DLogProof<Secp256k1, Sha256>> = {
+                let mut tmp = HashMap::new();
+                for (member_id, mb_gamma) in mb_gamma_kv.iter() {
                     tmp.insert(*member_id, &mb_gamma.b_proof);
                 }
-                tmp.values_by_key_asc()
+                tmp
             };
-            let R = SignKeys::phase4(&delta_inv, &b_proof_vec, decom1_vec, &bc1_vec).unwrap();
+            let R = SignKeys::phase4(&delta_inv, &b_proof_kv, &decom1_kv, &bc1_kv).unwrap();
             R + decom1.g_gamma_i * &delta_inv
         };
 
@@ -252,7 +216,7 @@ impl AlgoSign for MpcMember {
         self.postmsg_mcast(sign_mates_others.iter(), purpose, &phase5_com)
             .await
             .catch_()?;
-        let phase5_com_svec: SparseVec<Phase5Com1> = self
+        let phase5_com_kv: HashMap<u16, Phase5Com1> = self
             .getmsg_mcast(sign_mates_others.iter(), purpose)
             .await
             .catch_()?;
@@ -260,7 +224,7 @@ impl AlgoSign for MpcMember {
         self.postmsg_mcast(sign_mates_others.iter(), purpose, &phase5a_decom)
             .await
             .catch_()?;
-        let mut phase5a_decom_svec: SparseVec<Phase5ADecom1> = self
+        let mut phase5a_decom_kv: HashMap<u16, Phase5ADecom1> = self
             .getmsg_mcast(sign_mates_others.iter(), purpose)
             .await
             .catch_()?;
@@ -268,7 +232,7 @@ impl AlgoSign for MpcMember {
         self.postmsg_mcast(sign_mates_others.iter(), purpose, &helgamal_proof)
             .await
             .catch_()?;
-        let helgamal_proof_svec: SparseVec<HomoELGamalProof<Secp256k1, Sha256>> = self
+        let helgamal_proof_kv: HashMap<u16, HomoELGamalProof<Secp256k1, Sha256>> = self
             .getmsg_mcast(sign_mates_others.iter(), purpose)
             .await
             .catch_()?;
@@ -276,7 +240,7 @@ impl AlgoSign for MpcMember {
         self.postmsg_mcast(sign_mates_others.iter(), purpose, &dlog_proof_rho)
             .await
             .catch_()?;
-        let dlog_proof_rho_svec: SparseVec<DLogProof<Secp256k1, Sha256>> = self
+        let dlog_proof_rho_kv: HashMap<u16, DLogProof<Secp256k1, Sha256>> = self
             .getmsg_mcast(sign_mates_others.iter(), purpose)
             .await
             .catch_()?;
@@ -285,10 +249,10 @@ impl AlgoSign for MpcMember {
 
         let (phase5_com2, phase5d_decom2) = local_sig
             .phase5c(
-                &phase5a_decom_svec.values_by_key_asc(),
-                &phase5_com_svec.values_by_key_asc(),
-                &helgamal_proof_svec.values_by_key_asc(),
-                &dlog_proof_rho_svec.values_by_key_asc(),
+                &phase5a_decom_kv,
+                &phase5_com_kv,
+                &helgamal_proof_kv,
+                &dlog_proof_rho_kv,
                 &phase5a_decom.V_i,
                 &R,
             )
@@ -298,7 +262,7 @@ impl AlgoSign for MpcMember {
         self.postmsg_mcast(sign_mates.iter(), purpose, &phase5_com2)
             .await
             .catch_()?;
-        let phase5_com2_svec: SparseVec<Phase5Com2> = self
+        let phase5_com2_kv: HashMap<u16, Phase5Com2> = self
             .getmsg_mcast(sign_mates.iter(), purpose)
             .await
             .catch_()?;
@@ -306,18 +270,14 @@ impl AlgoSign for MpcMember {
         self.postmsg_mcast(sign_mates.iter(), purpose, &phase5d_decom2)
             .await
             .catch_()?;
-        let phase5d_decom2_svec: SparseVec<Phase5DDecom2> = self
+        let phase5d_decom2_kv: HashMap<u16, Phase5DDecom2> = self
             .getmsg_mcast(sign_mates.iter(), purpose)
             .await
             .catch_()?;
 
-        phase5a_decom_svec.insert(my_id, phase5a_decom);
+        phase5a_decom_kv.insert(my_id, phase5a_decom);
         let s_i = local_sig
-            .phase5d(
-                &phase5d_decom2_svec.values_by_key_asc(),
-                &phase5_com2_svec.values_by_key_asc(),
-                &phase5a_decom_svec.values_by_key_asc(),
-            )
+            .phase5d(&phase5d_decom2_kv, &phase5_com2_kv, &phase5a_decom_kv)
             .unwrap();
 
         println!("Finish phase5(c & d)");
@@ -326,13 +286,11 @@ impl AlgoSign for MpcMember {
         self.postmsg_mcast(sign_mates_others.iter(), purpose, &s_i)
             .await
             .catch_()?;
-        let s_i_svec: SparseVec<Scalar<Secp256k1>> = self
+        let s_i_kv: HashMap<u16, Scalar<Secp256k1>> = self
             .getmsg_mcast(sign_mates_others.iter(), purpose)
             .await
             .catch_()?;
-        let sig = local_sig
-            .output_signature(&s_i_svec.values_by_key_asc())
-            .unwrap();
+        let sig = local_sig.output_signature(&s_i_kv).unwrap();
         check_sig(&sig.r, &sig.s, &message_bn, &tweak_pk).catch_()?;
         check_sig0(&sig.r, &sig.s, &message_bn, &tweak_pk).catch_()?;
 

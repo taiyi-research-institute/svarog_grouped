@@ -191,6 +191,7 @@ const (
 	MpcSessionManager_PostMessage_FullMethodName      = "/svarog.MpcSessionManager/PostMessage"
 	MpcSessionManager_GetMessage_FullMethodName       = "/svarog.MpcSessionManager/GetMessage"
 	MpcSessionManager_TerminateSession_FullMethodName = "/svarog.MpcSessionManager/TerminateSession"
+	MpcSessionManager_ClearPurpose_FullMethodName     = "/svarog.MpcSessionManager/ClearPurpose"
 )
 
 // MpcSessionManagerClient is the client API for MpcSessionManager service.
@@ -204,7 +205,8 @@ type MpcSessionManagerClient interface {
 	BlowWhistle(ctx context.Context, in *Whistle, opts ...grpc.CallOption) (*Void, error)
 	PostMessage(ctx context.Context, in *Message, opts ...grpc.CallOption) (*Void, error)
 	GetMessage(ctx context.Context, in *Message, opts ...grpc.CallOption) (*Message, error)
-	TerminateSession(ctx context.Context, in *SessionTermination, opts ...grpc.CallOption) (*Void, error)
+	TerminateSession(ctx context.Context, in *SessionId, opts ...grpc.CallOption) (*Void, error)
+	ClearPurpose(ctx context.Context, in *PurposeToClear, opts ...grpc.CallOption) (*Void, error)
 }
 
 type mpcSessionManagerClient struct {
@@ -260,9 +262,18 @@ func (c *mpcSessionManagerClient) GetMessage(ctx context.Context, in *Message, o
 	return out, nil
 }
 
-func (c *mpcSessionManagerClient) TerminateSession(ctx context.Context, in *SessionTermination, opts ...grpc.CallOption) (*Void, error) {
+func (c *mpcSessionManagerClient) TerminateSession(ctx context.Context, in *SessionId, opts ...grpc.CallOption) (*Void, error) {
 	out := new(Void)
 	err := c.cc.Invoke(ctx, MpcSessionManager_TerminateSession_FullMethodName, in, out, opts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *mpcSessionManagerClient) ClearPurpose(ctx context.Context, in *PurposeToClear, opts ...grpc.CallOption) (*Void, error) {
+	out := new(Void)
+	err := c.cc.Invoke(ctx, MpcSessionManager_ClearPurpose_FullMethodName, in, out, opts...)
 	if err != nil {
 		return nil, err
 	}
@@ -280,7 +291,8 @@ type MpcSessionManagerServer interface {
 	BlowWhistle(context.Context, *Whistle) (*Void, error)
 	PostMessage(context.Context, *Message) (*Void, error)
 	GetMessage(context.Context, *Message) (*Message, error)
-	TerminateSession(context.Context, *SessionTermination) (*Void, error)
+	TerminateSession(context.Context, *SessionId) (*Void, error)
+	ClearPurpose(context.Context, *PurposeToClear) (*Void, error)
 	mustEmbedUnimplementedMpcSessionManagerServer()
 }
 
@@ -303,8 +315,11 @@ func (UnimplementedMpcSessionManagerServer) PostMessage(context.Context, *Messag
 func (UnimplementedMpcSessionManagerServer) GetMessage(context.Context, *Message) (*Message, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method GetMessage not implemented")
 }
-func (UnimplementedMpcSessionManagerServer) TerminateSession(context.Context, *SessionTermination) (*Void, error) {
+func (UnimplementedMpcSessionManagerServer) TerminateSession(context.Context, *SessionId) (*Void, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method TerminateSession not implemented")
+}
+func (UnimplementedMpcSessionManagerServer) ClearPurpose(context.Context, *PurposeToClear) (*Void, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method ClearPurpose not implemented")
 }
 func (UnimplementedMpcSessionManagerServer) mustEmbedUnimplementedMpcSessionManagerServer() {}
 
@@ -410,7 +425,7 @@ func _MpcSessionManager_GetMessage_Handler(srv interface{}, ctx context.Context,
 }
 
 func _MpcSessionManager_TerminateSession_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
-	in := new(SessionTermination)
+	in := new(SessionId)
 	if err := dec(in); err != nil {
 		return nil, err
 	}
@@ -422,7 +437,25 @@ func _MpcSessionManager_TerminateSession_Handler(srv interface{}, ctx context.Co
 		FullMethod: MpcSessionManager_TerminateSession_FullMethodName,
 	}
 	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
-		return srv.(MpcSessionManagerServer).TerminateSession(ctx, req.(*SessionTermination))
+		return srv.(MpcSessionManagerServer).TerminateSession(ctx, req.(*SessionId))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _MpcSessionManager_ClearPurpose_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(PurposeToClear)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(MpcSessionManagerServer).ClearPurpose(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: MpcSessionManager_ClearPurpose_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(MpcSessionManagerServer).ClearPurpose(ctx, req.(*PurposeToClear))
 	}
 	return interceptor(ctx, in, info, handler)
 }
@@ -457,6 +490,10 @@ var MpcSessionManager_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "TerminateSession",
 			Handler:    _MpcSessionManager_TerminateSession_Handler,
+		},
+		{
+			MethodName: "ClearPurpose",
+			Handler:    _MpcSessionManager_ClearPurpose_Handler,
 		},
 	},
 	Streams:  []grpc.StreamDesc{},

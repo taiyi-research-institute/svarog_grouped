@@ -1,7 +1,6 @@
 package bizlogic
 
 import (
-	"bytes"
 	"context"
 	"errors"
 	"sort"
@@ -314,123 +313,34 @@ func (srv *SessionManager) NewSession(
 
 func (srv *SessionManager) TerminateSession(
 	ctx context.Context,
-	req *pb.SessionTermination,
+	req *pb.SessionId,
 ) (resp *pb.Void, err error) {
 	db := srv.db
 	resp = &pb.Void{}
 
-	var session *MpcSession
-	{ // get session from db
-		err = db.Where("session_id = ?", req.SessionId).First(&session).Error
-		if err != nil {
-			srv.Error(err)
-			return nil, err
-		}
-		if session == nil {
-			srv.Debugw("Session does not exist", "SessionId", req.SessionId)
-			return nil, errors.New("Session does not exist")
-		}
-		// If a whistle is blown, return with error.
-		if session.Whistle != "" {
-			srv.Debugw("Session is dangerous", "SessionId", req.SessionId)
-			return nil, errors.New(session.Whistle)
-		}
+	err = db.Exec("DELETE FROM mpc_sessions WHERE session_id = ?", req.SessionId).Error
+	if err != nil {
+		srv.Error(err)
+		return nil, err
 	}
 
-	var member *MpcMember
-	{ // get member from db
-		err = db.
-			Where("session_id = ? AND member_id = ?", req.SessionId, req.MemberId).
-			First(&member).Error
-		if err != nil {
-			srv.Error(err)
-			return nil, err
-		}
-		if member == nil {
-			srv.Debugw("Member does not exist",
-				"SessionId", req.SessionId, "MemberId", req.MemberId)
-			return nil, errors.New("Member does not exist")
-		}
-		if !member.IsAttending {
-			srv.Debugw("Member is not attending",
-				"SessionId", req.SessionId, "MemberId", req.MemberId, "MemberName", member.MemberName)
-			return nil, errors.New("Member is not attending")
-		}
-		if member.IsTerminated {
-			srv.Debugw("Member is terminated",
-				"SessionId", req.SessionId, "MemberId", req.MemberId, "MemberName", member.MemberName)
-			return nil, nil
-		}
-	}
+	return resp, nil
+}
 
-	marshalled := make([]byte, 0)
-	{ // If the session doesn't have a Termination hash, update it;
-		if len(session.TerminationHash) == 0 {
-			marshalled, err = proto.Marshal(req.Fruit)
-			if err != nil {
-				srv.Error(err)
-				return nil, err
-			}
-			session.TerminationHash = util.Blake2b(marshalled)
-			err = db.Save(session).Error
-			if err != nil {
-				srv.Error(err)
-				return nil, err
-			}
-		} else { //// otherwise, check if it matches.
-			marshalled, err = proto.Marshal(req.Fruit)
-			if err != nil {
-				srv.Error(err)
-				return nil, err
-			}
-			hash2 := util.Blake2b(marshalled)
-			if !bytes.Equal(session.TerminationHash, hash2) {
-				srv.Debug("Termination hash mismatch")
-				return nil, err
-			}
-		}
-	}
+func (srv *SessionManager) ClearPurpose(
+	ctx context.Context,
+	req *pb.PurposeToClear,
+) (resp *pb.Void, err error) {
+	db := srv.db
+	resp = &pb.Void{}
 
-	{ // Mark the member as terminated
-		member.IsTerminated = true
-		err = db.Save(member).Error
-		if err != nil {
-			srv.Error(err)
-			return nil, err
-		}
-	}
-
-	var ses_members []*MpcMember
-	all_terminated := true
-	{ // If the member is the last one submitting a result, save the result to session.
-		err = db.
-			Where("session_id = ? AND member_id = ?",
-				req.SessionId, req.MemberId).
-			First(&ses_members).Error
-		if err != nil {
-			srv.Error(err)
-			return nil, err
-		}
-		for _, ses_member := range ses_members {
-			if ses_member.IsAttending && !ses_member.IsTerminated {
-				all_terminated = false
-				break
-			}
-		}
-		if all_terminated {
-			session.Result = marshalled
-			err = db.Save(session).Error
-			if err != nil {
-				srv.Error(err)
-				return nil, err
-			}
-			// delete old messages to release memory or storage.
-			err = db.Delete(&MpcMessage{}, "session_id = ?", req.SessionId).Error
-			if err != nil {
-				srv.Error(err)
-				return nil, err
-			}
-		}
+	err = db.
+		Exec(`DELETE FROM mpc_messages WHERE session_id = ? AND purpose = ?`,
+			req.SessionId, req.Purpose).
+		Error
+	if err != nil {
+		srv.Error(err)
+		return nil, err
 	}
 
 	return resp, nil
@@ -681,11 +591,6 @@ func (srv *SessionManager) GetMessage(
 			resp.Body = make([]byte, 0)
 		} else {
 			resp.Body = msg.Body
-			err = db.
-				Where("session_id = ? AND member_id_src = ? AND member_id_dst = ? AND purpose = ?",
-					req.SessionId, req.MemberIdSrc, req.MemberIdDst, req.Purpose).
-				Delete(msg).
-				Error
 		}
 	}
 

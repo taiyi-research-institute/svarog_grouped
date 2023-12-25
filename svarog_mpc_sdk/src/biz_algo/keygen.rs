@@ -2,26 +2,25 @@
 //! https://github.com/ZenGo-X/multi-party-ecdsa/blob/master/examples/gg18_keygen_client.rs
 //!
 
-use std::ops::Deref;
+use std::{collections::HashMap, ops::Deref};
 
+use super::*;
+use crate::{
+    exception::*,
+    gg18::{feldman_vss::*, multi_party_ecdsa::*},
+    mpc_member::*,
+};
 use bip32::ChainCode; // chain_code = left half of SHA512(pk)
 use bip39::{Language, Mnemonic};
 use curv::{
     arithmetic::traits::Converter,
-    cryptographic_primitives::{
-        proofs::sigma_dlog::DLogProof, secret_sharing::feldman_vss::VerifiableSS,
-    },
+    cryptographic_primitives::proofs::sigma_dlog::DLogProof,
     elliptic::curves::{secp256_k1::Secp256k1, Point, Scalar},
     BigInt,
 };
-use multi_party_ecdsa::protocols::multi_party_ecdsa::gg_2018::party_i::*;
 use paillier::EncryptionKey;
 use sha2::{Digest, Sha256, Sha512};
 use tonic::async_trait;
-use xuanmi_base_support::*;
-
-use super::*;
-use crate::{mpc_member::*, util::*};
 
 #[async_trait]
 pub trait AlgoKeygen {
@@ -39,22 +38,12 @@ impl AlgoKeygen for MpcMember {
             res.remove(&my_id);
             res
         };
-        let member_id_to_idx = {
-            let mut members: Vec<usize> = self.member_attending.iter().cloned().collect();
-            members.sort();
-            let mut res = SparseVec::new();
-            for (idx, member_id) in members.iter().enumerate() {
-                res.insert(*member_id, idx);
-            }
-            res
-        };
-        let config: Parameters = Parameters {
-            threshold: (self.key_quorum - 1) as u16,
-            share_count: key_mates.len() as u16,
-        };
         println!("my_id: {}, my_group_id: {}", my_id, my_group_id);
 
-        let party_keys = Keys::create(my_id as u16);
+        println!("Searching for safe prime. This may take a while...");
+        let party_keys = Keys::create_safe_prime(my_id);
+        println!("Found safe prime.");
+        
         let _shard_mnem: String =
             Mnemonic::from_entropy(&party_keys.u_i.to_bytes(), Language::English)
                 .catch_()?
@@ -67,7 +56,7 @@ impl AlgoKeygen for MpcMember {
         self.postmsg_mcast(key_mates.iter(), purpose, &com)
             .await
             .catch_()?;
-        let com_svec: SparseVec<KeyGenBroadcastMessage1> = self
+        let com_kv: HashMap<u16, KeyGenBroadcastMessage1> = self
             .getmsg_mcast(key_mates.iter(), purpose)
             .await
             .catch_()?;
@@ -76,14 +65,14 @@ impl AlgoKeygen for MpcMember {
         self.postmsg_mcast(key_mates.iter(), purpose, &decom)
             .await
             .catch_()?;
-        let decom_svec: SparseVec<KeyGenDecommitMessage1> = self
+        let decom_kv: HashMap<u16, KeyGenDecommitMessage1> = self
             .getmsg_mcast(key_mates.iter(), purpose)
             .await
             .catch_()?;
 
-        let aeskey_svec: SparseVec<BigInt> = {
-            let mut res = SparseVec::new();
-            for (member_id, decom) in decom_svec.iter() {
+        let aeskey_kv: HashMap<u16, BigInt> = {
+            let mut res = HashMap::new();
+            for (member_id, decom) in decom_kv.iter() {
                 let aeskey = decom.y_i.clone() * party_keys.u_i.clone();
                 let aeskey = aeskey.x_coord().ifnone_()?;
                 res.insert(*member_id, aeskey);
@@ -91,55 +80,47 @@ impl AlgoKeygen for MpcMember {
             res
         };
 
-        let y_svec = {
-            let mut res = SparseVec::new();
-            for (member_id, decom) in decom_svec.iter() {
+        let y_kv: HashMap<u16, Point<Secp256k1>> = {
+            let mut res = HashMap::new();
+            for (member_id, decom) in decom_kv.iter() {
                 res.insert(*member_id, decom.y_i.clone());
             }
             res
         };
 
-        let y_sum: Point<Secp256k1> = y_svec.iter().fold(Point::zero(), |sum, (_, y)| sum + y);
+        let y_sum: Point<Secp256k1> = y_kv.iter().fold(Point::zero(), |sum, (_, y)| sum + y);
 
         println!("Exchanged commitment to ephemeral public keys.");
 
-        let (vss_scheme, secret_share_vec, _) = party_keys
+        let (vss_scheme, secret_share_kv) = party_keys
             .phase1_verify_com_phase3_verify_correct_key_phase2_distribute(
-                &config,
-                &decom_svec.values_by_key_asc(),
-                &com_svec.values_by_key_asc(),
+                &self.key_quorum - 1,
+                &com_kv,
+                &decom_kv,
             )
             .unwrap();
-
-        let secret_share_svec = {
-            let mut res: SparseVec<Scalar<Secp256k1>> = SparseVec::new();
-            for (member_id, idx) in member_id_to_idx.iter() {
-                res.insert(*member_id, secret_share_vec[*idx].clone());
-            }
-            res
-        };
 
         println!("Generated secret shares.");
 
         purpose = "secret share aes-p2p";
         for member_id in key_mates_others.iter() {
-            let key: Vec<u8> = BigInt::to_bytes(&aeskey_svec[member_id]);
-            let plain: Vec<u8> = BigInt::to_bytes(&secret_share_svec[member_id].to_bigint());
+            let key: Vec<u8> = BigInt::to_bytes(&aeskey_kv[member_id]);
+            let plain: Vec<u8> = BigInt::to_bytes(&secret_share_kv[member_id].to_bigint());
             let aead: AEAD = aes_encrypt(&key, &plain).catch_()?;
             self.postmsg_p2p(*member_id, purpose, &aead)
                 .await
                 .catch_()?;
         }
-        let aead_others_svec: SparseVec<AEAD> = self
+        let aead_others_kv: HashMap<u16, AEAD> = self
             .getmsg_mcast(key_mates_others.iter(), purpose)
             .await
             .catch_()?;
 
-        let party_shares_svec = {
-            let mut res = SparseVec::new();
-            res.insert(my_id, secret_share_svec[&my_id].clone());
-            for (member_id, aead) in aead_others_svec.iter() {
-                let key = aeskey_svec[member_id].to_bytes();
+        let party_shares_kv: HashMap<u16, Scalar<Secp256k1>> = {
+            let mut res = HashMap::new();
+            res.insert(my_id, secret_share_kv[&my_id].clone());
+            for (member_id, aead) in aead_others_kv.iter() {
+                let key = aeskey_kv[member_id].to_bytes();
                 let plain = aes_decrypt(&key, &aead).catch_()?;
                 let party_share: Scalar<Secp256k1> = Scalar::from(BigInt::from_bytes(&plain));
                 res.insert(*member_id, party_share);
@@ -153,21 +134,18 @@ impl AlgoKeygen for MpcMember {
         self.postmsg_mcast(key_mates.iter(), purpose, &vss_scheme)
             .await
             .catch_()?;
-        let vss_scheme_svec: SparseVec<VerifiableSS<Secp256k1>> = self
+        let vss_scheme_kv: HashMap<u16, VerifiableSS<Secp256k1>> = self
             .getmsg_mcast(key_mates.iter(), purpose)
             .await
             .catch_()?;
 
         println!("Exchanged VSS commitments.");
 
-        let y_vec = y_svec.values_by_key_asc();
         let (shared_keys, dlog_proof) = party_keys
             .phase2_verify_vss_construct_keypair_phase3_pok_dlog(
-                &config,
-                &y_vec,
-                &party_shares_svec.values_by_key_asc(),
-                &vss_scheme_svec.values_by_key_asc(),
-                my_id as u16,
+                &y_kv,
+                &party_shares_kv,
+                &vss_scheme_kv,
             )
             .unwrap();
 
@@ -175,18 +153,18 @@ impl AlgoKeygen for MpcMember {
         self.postmsg_mcast(key_mates.iter(), purpose, &dlog_proof)
             .await
             .catch_()?;
-        let dlog_proof_svec: SparseVec<DLogProof<Secp256k1, Sha256>> = self
+        let dlog_proof_kv: HashMap<u16, DLogProof<Secp256k1, Sha256>> = self
             .getmsg_mcast(key_mates.iter(), purpose)
             .await
             .catch_()?;
 
         println!("Exchanged DLog proofs.");
 
-        Keys::verify_dlog_proofs(&config, &dlog_proof_svec.values_by_key_asc(), &y_vec).unwrap();
+        Keys::verify_dlog_proofs(&dlog_proof_kv).unwrap();
 
         println!("Verified DLog proofs.");
 
-        let paillier_key_svec: SparseVec<EncryptionKey> = com_svec // plkey_i = bc_i.e
+        let paillier_key_kv: HashMap<u16, EncryptionKey> = com_kv // plkey_i = bc_i.e
             .iter()
             .map(|(member_id, com)| (*member_id, com.e.clone()))
             .collect();
@@ -205,8 +183,8 @@ impl AlgoKeygen for MpcMember {
             party_keys,
             shared_keys,
             chain_code,
-            vss_scheme_svec,
-            paillier_key_svec,
+            vss_scheme_kv,
+            paillier_key_kv,
             key_arch: KeyArch::default(),
             member_id: my_id,
         };

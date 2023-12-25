@@ -3,7 +3,10 @@ use svarog_grpc::protogen::svarog::{
     mpc_session_manager_client::MpcSessionManagerClient, Group, Member, SessionConfig, ToSign,
     TxHash,
 };
-use xuanmi_base_support::*;
+use svarog_mpc_sdk::{
+    exception::{self, *},
+    throw,
+};
 
 #[tokio::main]
 async fn main() -> Outcome<()> {
@@ -134,21 +137,6 @@ fn init_sign_config() -> SessionConfig {
     conf.groups.push(group_noble_gas);
 
     let mut tasks: Vec<TxHash> = Vec::new();
-    tasks.push(TxHash {
-        tx_hash: hex::decode("f935e58e85f81d3a8ebcb4ebf4f98b1df935e58e85f81d3a8ebcb4ebf4f98b1d")
-            .unwrap(),
-        derive_path: "m".to_owned(),
-    });
-    tasks.push(TxHash {
-        tx_hash: hex::decode("d3a8ebcb4ebf4f98b1df935e58e85f81d3a8ebcb4ebf4f98b1df935e58e85f81")
-            .unwrap(),
-        derive_path: "m/0".to_owned(),
-    });
-    tasks.push(TxHash {
-        tx_hash: hex::decode("cb4ebf4f98b1df935e58e85f81d3a8ebcb4ebf4f98b1df935e58e85f81d3a8eb")
-            .unwrap(),
-        derive_path: "m/0/1".to_owned(),
-    });
     tasks.push(TxHash {
         tx_hash: hex::decode("ebcb4ebf4f98b1df935e58e85f81d3a8ebcb4ebf4f98b1df935e58e85f81d3a8")
             .unwrap(),

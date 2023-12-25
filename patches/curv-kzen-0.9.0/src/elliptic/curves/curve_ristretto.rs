@@ -61,11 +61,15 @@ pub type PK = curve25519_dalek::ristretto::RistrettoPoint;
 ///   returns `Err(NotOnCurve)`
 #[derive(Debug, PartialEq, Clone)]
 pub enum Ristretto {}
+
+#[allow(dead_code)]
 #[derive(Clone, Debug)]
 pub struct RistrettoScalar {
     purpose: &'static str,
     fe: Zeroizing<SK>,
 }
+
+#[allow(dead_code)]
 #[derive(Clone, Debug, Copy)]
 pub struct RistrettoPoint {
     purpose: &'static str,

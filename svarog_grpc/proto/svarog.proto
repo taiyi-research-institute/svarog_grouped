@@ -24,7 +24,8 @@ service MpcSessionManager {
     rpc BlowWhistle(Whistle) returns (Void);
     rpc PostMessage(Message) returns (Void);
     rpc GetMessage(Message) returns (Message);
-    rpc TerminateSession(SessionTermination) returns (Void);
+    rpc TerminateSession(SessionId) returns (Void);
+    rpc ClearPurpose(PurposeToClear) returns (Void);
 }
 
 message SessionConfig { 
@@ -103,17 +104,16 @@ message Message {
     bytes body = 5; // if set to [], remaining fields are used as index.
 }
 
+message PurposeToClear {
+    string session_id = 1;
+    string purpose = 2;
+}
+
 message SessionFruit {
     oneof value {
         string root_xpub = 1; // keygen or reshare result
         Signatures signatures = 2; // sign result
     }
-}
-
-message SessionTermination {
-    string session_id = 1;
-    uint64 member_id = 2; // member_id
-    SessionFruit fruit = 3;
 }
 
 message BizCallbackUrl {

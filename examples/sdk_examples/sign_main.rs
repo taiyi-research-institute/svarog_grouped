@@ -1,10 +1,10 @@
 use clap::{arg, Arg, ArgAction, Command, Parser};
 use svarog_mpc_sdk::{
-    gg18::{AlgoKeygen, AlgoSign, KeyStore},
+    biz_algo::{AlgoSign, KeyStore},
+    exception::*,
     DecompressAble, MpcMember,
 };
 use tokio::{fs::File, io::AsyncReadExt};
-use xuanmi_base_support::*;
 
 #[derive(Parser, Debug)]
 #[command(author, version, about, long_about = None)]

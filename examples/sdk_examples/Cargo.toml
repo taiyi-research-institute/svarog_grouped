@@ -41,11 +41,6 @@ path = "../../svarog_grpc"
 [dependencies.svarog_mpc_sdk]
 path = "../../svarog_mpc_sdk"
 
-[dependencies.xuanmi_base_support]
-git = "ssh://git@github.com/taiyi-research-institute/xuanmi_base_support.git"
-branch = "main"
-# path = "../../xuanmi_base_support"
-
 [profile.release]
 opt-level = 3
 # lto = true

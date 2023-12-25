@@ -42,9 +42,6 @@ features = ["num-bigint"]
 version = "0.12.0"
 features = ["arithmetic", "serde", "ecdsa", "ecdsa-core"]
 
-[dependencies.multi-party-ecdsa]
-path = "../patches/mp-ecdsa-184c49fa"
-
 [dependencies.svarog_grpc]
 path = "../svarog_grpc"
 
@@ -58,11 +55,6 @@ default-features = false
 # version = "0.10.6"
 version = "0.9.9"
 default-features = false
-
-[dependencies.xuanmi_base_support]
-git = "ssh://git@github.com/taiyi-research-institute/xuanmi_base_support.git"
-branch = "main"
-# path = "../../xuanmi_base_support"
 
 [profile.release]
 opt-level = 3

@@ -1,42 +1,40 @@
-use crate::util::*;
 use miniz_oxide::{deflate::compress_to_vec, inflate::decompress_to_vec};
 use serde::{de::DeserializeOwned, Serialize};
+use svarog_grpc::protogen::svarog::PurposeToClear;
 use std::collections::{HashMap, HashSet, VecDeque};
 use std::time::{SystemTime, UNIX_EPOCH};
 use svarog_grpc::protogen::svarog::{
-    mpc_session_manager_client::MpcSessionManagerClient, Message, SessionConfig, SessionId,
-    SessionTermination,
-};
+    mpc_session_manager_client::MpcSessionManagerClient, Message, SessionConfig, SessionId};
 pub use svarog_grpc::protogen::svarog::{session_fruit::Value as SessionFruitValue, SessionFruit};
 use tokio::time::{sleep, Duration};
-use xuanmi_base_support::*;
+use crate::{exception::*, assert_throw, throw};
 
 #[derive(Clone)]
 pub struct MpcMember {
     pub member_name: String,
-    pub member_id: usize,
-    pub group_id: usize,
-    pub member_attending: HashSet<usize>,
-    pub group_attending: HashMap<usize, HashSet<usize>>,
-    pub member_group: HashMap<usize, usize>,
-    pub group_member: HashMap<usize, HashSet<usize>>,
-    pub group_quora: HashMap<usize, usize>,
-    pub key_quorum: usize,
-    pub reshare_groups: HashSet<usize>,
-    pub reshare_members: HashSet<usize>,
+    pub member_id: u16,
+    pub group_id: u16,
+    pub member_attending: HashSet<u16>,
+    pub group_attending: HashMap<u16, HashSet<u16>>,
+    pub member_group: HashMap<u16, u16>,
+    pub group_member: HashMap<u16, HashSet<u16>>,
+    pub group_quora: HashMap<u16, u16>,
+    pub key_quorum: u16,
+    pub reshare_groups: HashSet<u16>,
+    pub reshare_members: HashSet<u16>,
 
     session_id: String,
     pub expire_at: u64,
-    grpc_hostport: String,
+    grpc_service_url: String,
 }
 
-pub enum MpcPeer<'a, C: IntoIterator<Item = usize>> {
-    Single(usize),
+pub enum MpcPeer<'a, C: IntoIterator<Item = u16>> {
+    Single(u16),
     Plural(&'a C),
 }
 
 impl MpcMember {
-    pub async fn new(grpc_hostport: &str) -> Outcome<Self> {
+    pub async fn new(grpc_service_url: &str) -> Outcome<Self> {
         Ok(MpcMember {
             member_name: "".to_string(),
             member_id: 0,
@@ -52,12 +50,12 @@ impl MpcMember {
 
             session_id: "".to_string(),
             expire_at: 0,
-            grpc_hostport: format!("http://{}", grpc_hostport),
+            grpc_service_url: grpc_service_url.to_owned(),
         })
     }
 
     pub async fn fetch_session_config(&self, ses_id: &str) -> Outcome<SessionConfig> {
-        let mut grpc_client = MpcSessionManagerClient::connect(self.grpc_hostport.to_owned())
+        let mut grpc_client = MpcSessionManagerClient::connect(self.grpc_service_url.to_owned())
             .await
             .catch_()?;
         println!("[debug] fetch_session_config: {:?}", ses_id);
@@ -77,28 +75,28 @@ impl MpcMember {
         member_name: &str,
         is_reshare: bool,
     ) -> Outcome<()> {
-        self.key_quorum = ses_config.key_quorum as usize;
+        self.key_quorum = ses_config.key_quorum.try_into().catch_()?;
         for group in &ses_config.groups {
-            let group_id = group.group_id;
+            let group_id = group.group_id.try_into().catch_()?;
             self.group_quora
-                .insert(group_id as usize, group.group_quorum as usize);
+                .insert(group_id, group.group_quorum.try_into().catch_()?);
             for member in &group.members {
-                let member_id = member.member_id;
+                let member_id = member.member_id.try_into().catch_()?;
                 self.member_group
-                    .insert(member_id as usize, group_id as usize);
+                    .insert(member_id, group_id);
                 if member.is_attending {
-                    self.member_attending.insert(member_id as usize);
+                    self.member_attending.insert(member_id);
                     self.group_attending
-                        .entry(group_id as usize)
+                        .entry(group_id)
                         .or_insert(HashSet::new())
-                        .insert(member_id as usize);
+                        .insert(member_id);
                 }
                 self.group_member
-                    .entry(group_id as usize)
+                    .entry(group_id)
                     .or_insert(HashSet::new())
-                    .insert(member_id as usize);
+                    .insert(member_id);
                 if group.is_reshare {
-                    self.reshare_members.insert(member_id as usize);
+                    self.reshare_members.insert(member_id);
                 }
                 if member.member_name == member_name && is_reshare == group.is_reshare {
                     assert_throw!(
@@ -108,12 +106,12 @@ impl MpcMember {
                             member_name, &ses_config.session_id
                         )
                     );
-                    self.member_id = member_id as usize;
-                    self.group_id = group_id as usize;
+                    self.member_id = member_id;
+                    self.group_id = group_id;
                 }
             }
             if group.is_reshare {
-                self.reshare_groups.insert(group_id as usize);
+                self.reshare_groups.insert(group_id);
             }
         }
         if member_name != "" {
@@ -134,25 +132,36 @@ impl MpcMember {
         Ok(())
     }
 
-    pub async fn terminate_session(&self, value: SessionFruitValue) -> Outcome<()> {
-        let mut grpc_client = MpcSessionManagerClient::connect(self.grpc_hostport.to_owned())
+    pub async fn terminate_session(&self) -> Outcome<()> {
+        let mut grpc_client = MpcSessionManagerClient::connect(self.grpc_service_url.to_owned())
             .await
             .catch_()?;
         self.assert_on_time().catch_()?;
-        let req = SessionTermination {
+        let req = SessionId {
             session_id: self.session_id.clone(),
-            member_id: self.member_id as u64,
-            fruit: Some(SessionFruit { value: Some(value) }),
         };
         grpc_client.terminate_session(req).await.catch_()?;
         Ok(())
     }
 
-    pub async fn postmsg_p2p<T>(&self, dst: usize, purpose: &str, obj: &T) -> Outcome<()>
+    pub async fn clear_purpose(&self, purpose: &str) -> Outcome<()> {
+        let mut grpc_client = MpcSessionManagerClient::connect(self.grpc_service_url.to_owned())
+            .await
+            .catch_()?;
+        self.assert_on_time().catch_()?;
+        let req = PurposeToClear {
+            session_id: self.session_id.clone(),
+            purpose: purpose.to_string(),
+        };
+        grpc_client.clear_purpose(req).await.catch_()?;
+        Ok(())
+    }
+
+    pub async fn postmsg_p2p<T>(&self, dst: u16, purpose: &str, obj: &T) -> Outcome<()>
     where
         T: Serialize + DeserializeOwned,
     {
-        let mut grpc_client = MpcSessionManagerClient::connect(self.grpc_hostport.to_owned())
+        let mut grpc_client = MpcSessionManagerClient::connect(self.grpc_service_url.to_owned())
             .await
             .catch_()?;
         let bytes = obj.compress().catch_()?;
@@ -168,11 +177,11 @@ impl MpcMember {
         Ok(())
     }
 
-    pub async fn getmsg_p2p<T>(&self, src: usize, purpose: &str) -> Outcome<T>
+    pub async fn getmsg_p2p<T>(&self, src: u16, purpose: &str) -> Outcome<T>
     where
         T: Serialize + DeserializeOwned,
     {
-        let mut grpc_client = MpcSessionManagerClient::connect(self.grpc_hostport.to_owned())
+        let mut grpc_client = MpcSessionManagerClient::connect(self.grpc_service_url.to_owned())
             .await
             .catch_()?;
         let msg_idx = Message {
@@ -212,10 +221,10 @@ impl MpcMember {
 
     pub async fn postmsg_mcast<'a, It, T>(&self, dst_set: It, purpose: &str, obj: &T) -> Outcome<()>
     where
-        It: Iterator<Item = &'a usize>,
+        It: Iterator<Item = &'a u16>,
         T: Serialize + DeserializeOwned,
     {
-        let mut grpc_client = MpcSessionManagerClient::connect(self.grpc_hostport.to_owned())
+        let mut grpc_client = MpcSessionManagerClient::connect(self.grpc_service_url.to_owned())
             .await
             .catch_()?;
         let bytes = obj.compress().catch_()?;
@@ -233,18 +242,18 @@ impl MpcMember {
         Ok(())
     }
 
-    pub async fn getmsg_mcast<'a, It, T>(&self, src_set: It, purpose: &str) -> Outcome<SparseVec<T>>
+    pub async fn getmsg_mcast<'a, It, T>(&self, src_set: It, purpose: &str) -> Outcome<HashMap<u16, T>>
     where
-        It: Iterator<Item = &'a usize>,
+        It: Iterator<Item = &'a u16>,
         T: Serialize + DeserializeOwned,
     {
-        let mut grpc_client = MpcSessionManagerClient::connect(self.grpc_hostport.to_owned())
+        let mut grpc_client = MpcSessionManagerClient::connect(self.grpc_service_url.to_owned())
             .await
             .catch_()?;
-        let mut sparse_array = SparseVec::<T>::new();
-        let mut src_set: VecDeque<usize> = src_set.cloned().collect();
+        let mut sparse_array: HashMap<u16, T> = HashMap::new();
+        let mut src_set: VecDeque<u16> = src_set.cloned().collect();
         while now() < self.expire_at && !src_set.is_empty() {
-            let src: usize = src_set.pop_front().unwrap();
+            let src: u16 = src_set.pop_front().unwrap();
             let msg_idx = Message {
                 session_id: self.session_id.clone(),
                 purpose: purpose.to_string(),

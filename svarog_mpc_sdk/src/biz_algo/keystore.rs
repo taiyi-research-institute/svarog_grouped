@@ -1,13 +1,13 @@
-use std::ops::Deref;
+use std::{collections::HashMap, ops::Deref};
 
-use super::*;
-use crate::{util::*, CompressAble, DecompressAble};
-use bip32::{ChildNumber, ExtendedKey, ExtendedKeyAttrs, Prefix};
-use curv::{
-    cryptographic_primitives::secret_sharing::feldman_vss::VerifiableSS,
-    elliptic::curves::Secp256k1,
+use crate::{
+    assert_throw,
+    exception::*,
+    gg18::{feldman_vss::VerifiableSS, multi_party_ecdsa::*},
+    CompressAble, DecompressAble,
 };
-use multi_party_ecdsa::protocols::multi_party_ecdsa::gg_2018::party_i::*;
+use bip32::{ChildNumber, ExtendedKey, ExtendedKeyAttrs, Prefix};
+use curv::elliptic::curves::Secp256k1;
 use paillier::EncryptionKey;
 use serde::{Deserialize, Serialize};
 use svarog_grpc::protogen::svarog::SessionConfig;
@@ -15,13 +15,13 @@ use svarog_grpc::protogen::svarog::SessionConfig;
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct KeyStore {
     pub party_keys: Keys,
-    pub shared_keys: SharedKeys,
+    pub shared_keys: SharedKeyPair,
     pub chain_code: [u8; 32],
-    pub vss_scheme_svec: SparseVec<VerifiableSS<Secp256k1>>,
-    pub paillier_key_svec: SparseVec<EncryptionKey>,
+    pub vss_scheme_kv: HashMap<u16, VerifiableSS<Secp256k1>>,
+    pub paillier_key_kv: HashMap<u16, EncryptionKey>,
 
     pub key_arch: KeyArch,
-    pub member_id: usize,
+    pub member_id: u16,
 }
 
 impl KeyStore {
@@ -60,13 +60,13 @@ impl KeyStore {
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct KeyArch {
-    pub key_quorum: usize,
+    pub key_quorum: u16,
     pub groups: Vec<svarog_grpc::protogen::svarog::Group>,
 }
 
 impl From<&SessionConfig> for KeyArch {
     fn from(config: &SessionConfig) -> Self {
-        let key_quorum = config.key_quorum as usize;
+        let key_quorum = config.key_quorum as u16;
         let groups = config.groups.clone();
         Self { key_quorum, groups }
     }
