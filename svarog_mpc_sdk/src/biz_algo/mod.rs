@@ -1,25 +1,4 @@
 #![allow(non_snake_case)]
-/*
-    This is a modified version of `party_i.rs` in Kzen Networks' Multi-party ECDSA library
-    (https://github.com/KZen-networks/multi-party-ecdsa/src/protocols/multi_party_ecdsa/gg_2018/party_i.rs)
-*/
-
-/*
-    Multi-party ECDSA
-
-    Copyright 2018 by Kzen Networks
-
-    This file is part of Multi-party ECDSA library
-    (https://github.com/KZen-networks/multi-party-ecdsa)
-
-    Multi-party ECDSA is free software: you can redistribute
-    it and/or modify it under the terms of the GNU General Public
-    License as published by the Free Software Foundation, either
-    version 3 of the License, or (at your option) any later version.
-
-    @license GPL-3.0+ <https://github.com/KZen-networks/multi-party-ecdsa/blob/master/LICENSE>
-*/
-
 mod keygen;
 pub use keygen::*;
 mod keystore;
@@ -30,14 +9,18 @@ mod sign;
 pub use sign::*;
 mod hd;
 pub use hd::*;
+mod reshare;
+pub use reshare::*;
 
 use crate::exception::*;
 use aes_gcm::{
     aead::{Aead, NewAead, Payload},
     Aes256Gcm, Nonce,
 };
+use curv::elliptic::curves::{Scalar, Secp256k1};
 use rand_core::{OsRng, RngCore};
 use serde::{Deserialize, Serialize};
+use std::collections::{HashMap, HashSet, VecDeque};
 
 #[derive(Clone, PartialEq, Debug, Serialize, Deserialize)]
 pub struct AEAD {
@@ -93,4 +76,19 @@ pub fn aes_decrypt(key: &[u8], aead_pack: &AEAD) -> Outcome<Vec<u8>> {
     // NOTE: no error reported but return a value NONE when decrypt key is wrong
     let out = gcm.decrypt(nonce, payload).catch("AesGcmException", "")?;
     Ok(out)
+}
+pub fn scalar_split(
+    x: &Scalar<Secp256k1>,
+    members: &HashSet<u16>,
+) -> HashMap<u16, Scalar<Secp256k1>> {
+    let mut res = HashMap::new();
+    let mut members: VecDeque<u16> = members.iter().cloned().collect();
+    while members.len() > 1 {
+        let member_id = members.pop_front().unwrap();
+        res.insert(member_id, Scalar::<Secp256k1>::random());
+    }
+    let member_id = members.pop_front().unwrap();
+    let partial_sum: Scalar<Secp256k1> = res.values().sum();
+    res.insert(member_id, x - partial_sum);
+    res
 }

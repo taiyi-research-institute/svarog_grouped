@@ -29,7 +29,7 @@ async fn main() -> Outcome<()> {
                 .action(ArgAction::SetTrue),
         )
         .arg(
-            Arg::new("url_sesmon")
+            Arg::new("url_sesman")
                 .short('u')
                 .default_value("http://127.0.0.1:9000")
                 .action(ArgAction::Set),
@@ -40,12 +40,12 @@ async fn main() -> Outcome<()> {
         .ifnone_()?
         .to_owned();
     let is_reshare: bool = matches.get_flag("reshare");
-    let url_sesmon: String = matches
-        .get_one::<String>("url_sesmon")
+    let url_sesman: String = matches
+        .get_one::<String>("url_sesman")
         .ifnone_()?
         .to_owned();
 
-    let mut member = MpcMember::new(&url_sesmon).await.catch_()?;
+    let mut member = MpcMember::new(&url_sesman).await.catch_()?;
     let conf = member.fetch_session_config("keygen").await.catch_()?;
 
     member

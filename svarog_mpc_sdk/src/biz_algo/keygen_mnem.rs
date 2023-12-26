@@ -2,10 +2,7 @@
 //! https://github.com/ZenGo-X/multi-party-ecdsa/blob/master/examples/gg18_keygen_client.rs
 //!
 
-use std::{
-    collections::{HashMap, VecDeque},
-    ops::Deref,
-};
+use std::{collections::HashMap, ops::Deref};
 
 use super::*;
 use crate::{
@@ -59,9 +56,9 @@ impl AlgoKeygenMnem for MpcMember {
         println!("mnemonic provider");
 
         let temp_party_keys: Keys = Keys::create_safe_prime(0 as u16);
-
-        purpose = "temp commitment";
         let (temp_com, temp_decom) = temp_party_keys.phase1_broadcast_phase3_proof_of_correct_key();
+
+        purpose = "temp_com";
         self.postmsg_mcast(key_mates.iter(), purpose, &temp_com)
             .await
             .catch_()?;
@@ -70,7 +67,7 @@ impl AlgoKeygenMnem for MpcMember {
             .await
             .catch_()?;
 
-        purpose = "temp decommitment";
+        purpose = "temp_decom";
         self.postmsg_mcast(key_mates.iter(), purpose, &temp_decom)
             .await
             .catch_()?;
@@ -82,25 +79,26 @@ impl AlgoKeygenMnem for MpcMember {
         println!("Exchanged temp commitment and decommitment.");
 
         for member_id in key_mates.iter() {
-            let temp_com = &temp_com_kv[member_id];
-            let temp_decom = &temp_decom_kv[member_id];
-            temp_com
+            let temp_com_i = &temp_com_kv[member_id];
+            let temp_decom_i = &temp_decom_kv[member_id];
+            temp_com_i
                 .correct_key_proof
-                .verify(&temp_com.e, zk_paillier::zkproofs::SALT_STRING)
+                .verify(&temp_com_i.e, zk_paillier::zkproofs::SALT_STRING)
                 .catch("", "Invalid key")?;
-            let hashcom = HashCommitment::<Sha256>::create_commitment_with_user_defined_randomness(
-                &BigInt::from_bytes(temp_decom.y_i.to_bytes(true).deref()),
-                &temp_decom.blind_factor,
-            );
-            assert_throw!(temp_com.com == hashcom, "Invalid commitment");
+            let hashcom_i =
+                HashCommitment::<Sha256>::create_commitment_with_user_defined_randomness(
+                    &BigInt::from_bytes(temp_decom_i.y_i.to_bytes(true).deref()),
+                    &temp_decom_i.blind_factor,
+                );
+            assert_throw!(temp_com_i.com == hashcom_i, "Invalid commitment");
         }
 
-        println!("Verified pre commitment and decommitment.");
+        println!("Verified temp commitment and decommitment.");
 
         let temp_aeskey_kv = {
             let mut res = HashMap::with_capacity(16);
             for (id, temp_decom) in temp_decom_kv.iter() {
-                let enc_key = temp_decom.y_i.clone() * temp_party_keys.u_i.clone();
+                let enc_key = &temp_decom.y_i * &temp_party_keys.u_i;
                 let enc_key = enc_key.x_coord().ifnone_()?;
                 res.insert(*id, enc_key);
             }
@@ -120,20 +118,7 @@ impl AlgoKeygenMnem for MpcMember {
                 * Point::<Secp256k1>::generator();
         let chain_code = master_sk.chain_code.to_bytes();
 
-        let scalar_split = || -> HashMap<u16, Scalar<Secp256k1>> {
-            let mut res = HashMap::new();
-            let mut members: VecDeque<u16> = key_mates_others.iter().cloned().collect();
-            while members.len() > 1 {
-                let member_id = members.pop_front().unwrap();
-                res.insert(member_id, Scalar::<Secp256k1>::random());
-            }
-            let member_id = members.pop_front().unwrap();
-            let partial_sum: Scalar<Secp256k1> = res.values().sum();
-            res.insert(member_id, num_sk - partial_sum);
-            res
-        };
-
-        let partition = scalar_split();
+        let partition = scalar_split(&num_sk, &key_mates_others);
 
         purpose = "share real sk";
         for member_id in key_mates_others.iter() {
@@ -272,7 +257,7 @@ impl AlgoKeygenMnem for MpcMember {
         let aeskey_kv: HashMap<u16, BigInt> = {
             let mut res = HashMap::new();
             for (member_id, decom) in decom_kv.iter() {
-                let aeskey = decom.y_i.clone() * party_keys.u_i.clone();
+                let aeskey = &decom.y_i * &party_keys.u_i;
                 let aeskey = aeskey.x_coord().ifnone_()?;
                 res.insert(*member_id, aeskey);
             }
@@ -300,7 +285,7 @@ impl AlgoKeygenMnem for MpcMember {
             )
             .unwrap();
 
-        println!("Generated secret shares.");
+        println!("Generated vss schemes.");
 
         purpose = "secret share aes-p2p";
         for member_id in key_mates_others.iter() {

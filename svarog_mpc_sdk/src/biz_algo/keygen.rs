@@ -73,7 +73,7 @@ impl AlgoKeygen for MpcMember {
         let aeskey_kv: HashMap<u16, BigInt> = {
             let mut res = HashMap::new();
             for (member_id, decom) in decom_kv.iter() {
-                let aeskey = decom.y_i.clone() * party_keys.u_i.clone();
+                let aeskey = &decom.y_i * &party_keys.u_i;
                 let aeskey = aeskey.x_coord().ifnone_()?;
                 res.insert(*member_id, aeskey);
             }
@@ -100,7 +100,7 @@ impl AlgoKeygen for MpcMember {
             )
             .unwrap();
 
-        println!("Generated secret shares.");
+        println!("Generated vss schemes.");
 
         purpose = "secret share aes-p2p";
         for member_id in key_mates_others.iter() {

@@ -151,6 +151,19 @@ impl Keys {
         }
     }
 
+    pub fn create_from(u: &Scalar<Secp256k1>, member_id: u16) -> Keys {
+        let y = Point::generator() * u;
+        let (ek, dk) = Paillier::keypair().keys();
+
+        Self {
+            u_i: u.clone(),
+            y_i: y,
+            dk,
+            ek,
+            member_id,
+        }
+    }
+
     pub fn phase1_broadcast_phase3_proof_of_correct_key(
         &self,
     ) -> (KeyGenBroadcastMessage1, KeyGenDecommitMessage1) {

@@ -20,6 +20,7 @@ pub struct MpcMember {
     pub group_member: HashMap<u16, HashSet<u16>>,
     pub group_quora: HashMap<u16, u16>,
     pub key_quorum: u16,
+    pub reshare_key_quorum: u16,
     pub reshare_groups: HashSet<u16>,
     pub reshare_members: HashSet<u16>,
 
@@ -45,6 +46,7 @@ impl MpcMember {
             group_member: HashMap::new(),
             group_quora: HashMap::new(),
             key_quorum: 0,
+            reshare_key_quorum: 0,
             reshare_groups: HashSet::new(),
             reshare_members: HashSet::new(),
 
@@ -76,6 +78,7 @@ impl MpcMember {
         is_reshare: bool,
     ) -> Outcome<()> {
         self.key_quorum = ses_config.key_quorum.try_into().catch_()?;
+        self.reshare_key_quorum = ses_config.reshare_key_quorum.try_into().catch_()?;
         for group in &ses_config.groups {
             let group_id = group.group_id.try_into().catch_()?;
             self.group_quora
