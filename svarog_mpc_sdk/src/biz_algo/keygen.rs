@@ -41,7 +41,7 @@ impl AlgoKeygen for MpcMember {
         println!("my_id: {}, my_group_id: {}", my_id, my_group_id);
 
         println!("Searching for safe prime. This may take a while...");
-        let party_keys = Keys::create_safe_prime(my_id);
+        let party_keys = Keys::create_safely(my_id);
         println!("Found safe prime.");
         
         let _shard_mnem: String =
@@ -179,13 +179,19 @@ impl AlgoKeygen for MpcMember {
             chain_code
         };
 
+        let key_arch = KeyArch {
+            key_quorum: self.key_quorum,
+            group_quora: self.group_quora.clone(),
+            member_group: self.member_group.clone(),
+        };
+
         let keystore = KeyStore {
             party_keys,
             shared_keys,
             chain_code,
             vss_scheme_kv,
             paillier_key_kv,
-            key_arch: KeyArch::default(),
+            key_arch,
             member_id: my_id,
         };
 

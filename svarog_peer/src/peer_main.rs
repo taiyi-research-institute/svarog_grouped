@@ -8,7 +8,7 @@ use svarog_grpc::protogen::svarog::{
     mpc_peer_server::MpcPeer, JoinSessionRequest, SessionFruit, SessionId, Void, Whistle,
 };
 use svarog_grpc::protogen::svarog::{SessionConfig, Signatures};
-use svarog_mpc_sdk::biz_algo::{AlgoKeygen, AlgoSign, KeyArch, KeyStore};
+use svarog_mpc_sdk::biz_algo::{AlgoKeygen, AlgoSign, KeyStore};
 use svarog_mpc_sdk::{now, CompressAble, DecompressAble, MpcMember, SessionFruitValue};
 use tokio::fs::File;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
@@ -277,8 +277,7 @@ async fn run_keygen_session(
         "member: {}, key_quorum: {}, ses_arch: {:#?}",
         &mpc_member.member_name, &conf.key_quorum, &conf.groups
     );
-    let mut keystore = mpc_member.algo_keygen().await.catch_()?;
-    keystore.key_arch = KeyArch::from(conf);
+    let keystore = mpc_member.algo_keygen().await.catch_()?;
 
     let buf = keystore.compress().catch_()?;
     let path = if key_name.is_empty() {

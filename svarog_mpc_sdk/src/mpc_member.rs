@@ -9,7 +9,7 @@ pub use svarog_grpc::protogen::svarog::{session_fruit::Value as SessionFruitValu
 use tokio::time::{sleep, Duration};
 use crate::{exception::*, assert_throw, throw};
 
-#[derive(Clone)]
+#[derive(Clone, Default)]
 pub struct MpcMember {
     pub member_name: String,
     pub member_id: u16,
@@ -36,24 +36,9 @@ pub enum MpcPeer<'a, C: IntoIterator<Item = u16>> {
 
 impl MpcMember {
     pub async fn new(grpc_service_url: &str) -> Outcome<Self> {
-        Ok(MpcMember {
-            member_name: "".to_string(),
-            member_id: 0,
-            group_id: 0,
-            member_attending: HashSet::new(),
-            group_attending: HashMap::new(),
-            member_group: HashMap::new(),
-            group_member: HashMap::new(),
-            group_quora: HashMap::new(),
-            key_quorum: 0,
-            reshare_key_quorum: 0,
-            reshare_groups: HashSet::new(),
-            reshare_members: HashSet::new(),
-
-            session_id: "".to_string(),
-            expire_at: 0,
-            grpc_service_url: grpc_service_url.to_owned(),
-        })
+        let mut res = MpcMember::default();
+        res.grpc_service_url = grpc_service_url.to_owned();
+        Ok(res)
     }
 
     pub async fn fetch_session_config(&self, ses_id: &str) -> Outcome<SessionConfig> {
@@ -77,6 +62,10 @@ impl MpcMember {
         member_name: &str,
         is_reshare: bool,
     ) -> Outcome<()> {
+        let grpc_service_url = self.grpc_service_url.clone();
+        *self = MpcMember::default();
+        
+        self.grpc_service_url = grpc_service_url;
         self.key_quorum = ses_config.key_quorum.try_into().catch_()?;
         self.reshare_key_quorum = ses_config.reshare_key_quorum.try_into().catch_()?;
         for group in &ses_config.groups {

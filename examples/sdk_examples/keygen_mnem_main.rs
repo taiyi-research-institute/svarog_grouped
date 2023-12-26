@@ -65,8 +65,7 @@ async fn main() -> Outcome<()> {
         let pwd = "";
         member.algo_keygen_provide_mnem(mnem, pwd).await.catch_()?;
     } else {
-        let mut keystore = member.algo_keygen_consume_mnem().await.catch_()?;
-        keystore.key_arch = KeyArch::from(&conf);
+        let keystore = member.algo_keygen_consume_mnem().await.catch_()?;
         let buf = keystore.compress().catch_()?;
         let path = &format!("assets/{}@{}.keystore", member_name, conf.session_id);
         let mut file = File::create(path).await.catch_()?;

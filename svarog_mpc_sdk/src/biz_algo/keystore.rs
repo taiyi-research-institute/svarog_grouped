@@ -10,7 +10,6 @@ use bip32::{ChildNumber, ExtendedKey, ExtendedKeyAttrs, Prefix};
 use curv::elliptic::curves::Secp256k1;
 use paillier::EncryptionKey;
 use serde::{Deserialize, Serialize};
-use svarog_grpc::protogen::svarog::SessionConfig;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct KeyStore {
@@ -61,13 +60,6 @@ impl KeyStore {
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct KeyArch {
     pub key_quorum: u16,
-    pub groups: Vec<svarog_grpc::protogen::svarog::Group>,
-}
-
-impl From<&SessionConfig> for KeyArch {
-    fn from(config: &SessionConfig) -> Self {
-        let key_quorum = config.key_quorum as u16;
-        let groups = config.groups.clone();
-        Self { key_quorum, groups }
-    }
+    pub group_quora: HashMap<u16, u16>,
+    pub member_group: HashMap<u16, u16>,
 }

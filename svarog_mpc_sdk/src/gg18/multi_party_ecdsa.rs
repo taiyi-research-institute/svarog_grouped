@@ -136,7 +136,35 @@ pub struct SignatureRecid {
 }
 
 impl Keys {
-    pub fn create_safe_prime(member_id: u16) -> Keys {
+    pub fn create_casually(member_id: u16) -> Keys {
+        let u_i = Scalar::<Secp256k1>::random();
+        let y_i = Point::<Secp256k1>::generator() * &u_i;
+
+        let (ek, dk) = Paillier::keypair().keys();
+
+        Self {
+            u_i,
+            y_i,
+            dk,
+            ek,
+            member_id,
+        }
+    }
+
+    pub fn create_casually_from(u: &Scalar<Secp256k1>, member_id: u16) -> Keys {
+        let y = Point::generator() * u;
+        let (ek, dk) = Paillier::keypair().keys();
+
+        Self {
+            u_i: u.clone(),
+            y_i: y,
+            dk,
+            ek,
+            member_id,
+        }
+    }
+
+    pub fn create_safely(member_id: u16) -> Keys {
         let u_i = Scalar::<Secp256k1>::random();
         let y_i = Point::<Secp256k1>::generator() * &u_i;
 
@@ -151,9 +179,9 @@ impl Keys {
         }
     }
 
-    pub fn create_from(u: &Scalar<Secp256k1>, member_id: u16) -> Keys {
+    pub fn create_safely_from(u: &Scalar<Secp256k1>, member_id: u16) -> Keys {
         let y = Point::generator() * u;
-        let (ek, dk) = Paillier::keypair().keys();
+        let (ek, dk) = Paillier::keypair_safe_primes().keys();
 
         Self {
             u_i: u.clone(),
@@ -579,7 +607,10 @@ impl LocalSignature {
         Ok(self.s_i.clone())
     }
 
-    pub fn output_signature(&self, s_kv: &HashMap<u16, Scalar<Secp256k1>>) -> Outcome<SignatureRecid> {
+    pub fn output_signature(
+        &self,
+        s_kv: &HashMap<u16, Scalar<Secp256k1>>,
+    ) -> Outcome<SignatureRecid> {
         let mut s: Scalar<Secp256k1> = &self.s_i + s_kv.values().sum::<Scalar<Secp256k1>>();
         let s_bn = s.to_bigint();
 

@@ -54,8 +54,9 @@ impl AlgoKeygenMnem for MpcMember {
         let mut purpose: &str;
 
         println!("mnemonic provider");
-
-        let temp_party_keys: Keys = Keys::create_safe_prime(0 as u16);
+        println!("Searching for safe prime. This may take a while...");
+        let temp_party_keys: Keys = Keys::create_safely(0 as u16);
+        println!("Found safe prime.");
         let (temp_com, temp_decom) = temp_party_keys.phase1_broadcast_phase3_proof_of_correct_key();
 
         purpose = "temp_com";
@@ -151,7 +152,7 @@ impl AlgoKeygenMnem for MpcMember {
             my_id, self.group_id
         );
 
-        let mut temp_party_keys: Keys = Keys::create_safe_prime(my_id as u16);
+        let mut temp_party_keys: Keys = Keys::create_safely(my_id as u16);
 
         purpose = "temp commitment";
         let (temp_com, temp_decom) = temp_party_keys.phase1_broadcast_phase3_proof_of_correct_key();
@@ -354,13 +355,19 @@ impl AlgoKeygenMnem for MpcMember {
             .map(|(member_id, com)| (*member_id, com.e.clone()))
             .collect();
 
+        let key_arch = KeyArch {
+            key_quorum: self.key_quorum,
+            group_quora: self.group_quora.clone(),
+            member_group: self.member_group.clone(),
+        };
+
         let keystore = KeyStore {
             party_keys,
             shared_keys,
             chain_code,
             vss_scheme_kv,
             paillier_key_kv,
-            key_arch: KeyArch::default(),
+            key_arch,
             member_id: my_id,
         };
 

@@ -23,7 +23,6 @@ use curv::{
     elliptic::curves::{Point, Scalar, Secp256k1},
     BigInt,
 };
-use itertools::Itertools;
 use paillier::EncryptionKey;
 use sha2::Sha256;
 use tonic::async_trait;
@@ -40,7 +39,7 @@ impl AlgoReshare for MpcMember {
     async fn exchange_aes_keys(&self) -> Outcome<HashMap<u16, BigInt>> {
         let mut purpose: &str;
         // Exchange AES keys, so that the mpc manager won't know what he is delivering.
-        let temp_party_keys: Keys = Keys::create_safe_prime(0 as u16);
+        let temp_party_keys: Keys = Keys::create_casually(0 as u16);
         let (temp_com, temp_decom) = temp_party_keys.phase1_broadcast_phase3_proof_of_correct_key();
 
         purpose = "temp_com";
@@ -158,8 +157,8 @@ impl AlgoReshare for MpcMember {
             .await
             .catch_()?;
         let mut wji_vec: Vec<Scalar<Secp256k1>> = Vec::new();
-        for wji_aead in wji_aead_kv.values() {
-            let key_i = aeskey_kv.get(&my_id).ifnone_()?;
+        for (provider_id, wji_aead) in &wji_aead_kv {
+            let key_i = aeskey_kv.get(provider_id).ifnone_()?;
             let key_i = BigInt::to_bytes(key_i);
             let plain_i = aes_decrypt(&key_i, wji_aead).catch_()?;
             let wji = Scalar::<Secp256k1>::from_bigint(&BigInt::from_bytes(plain_i.deref()));
@@ -190,8 +189,9 @@ impl AlgoReshare for MpcMember {
         /* ===== FINISH SECRET SHARING ===== */
 
         let min_receiver_id = self.reshare_members.iter().min().ifnone_()?;
+        let min_receiver_group_id = self.member_group.get(min_receiver_id).ifnone_()?;
         let my_id: u16 = self.member_id - min_receiver_id + 1;
-        let my_group_id: u16 = self.group_id - min_receiver_id + 1;
+        let my_group_id: u16 = self.group_id - min_receiver_group_id + 1;
         let mut key_mates: HashSet<u16> = HashSet::new();
         let mut key_mates_others: HashSet<u16> = HashSet::new();
         for member_id in self.reshare_members.iter() {
@@ -201,28 +201,32 @@ impl AlgoReshare for MpcMember {
                 key_mates_others.insert(member_id);
             }
         }
+        let mut tweaked_self = self.clone();
+        tweaked_self.member_id = my_id;
         println!(
             "my_id: {}, my_group_id: {} (aligned to incoming key)",
             my_id, my_group_id
         );
 
-        let party_keys = Keys::create_from(&u_j, my_id);
+        println!("Searching for safe prime. This may take a while...");
+        let party_keys = Keys::create_safely_from(&u_j, my_id);
+        println!("Found safe prime.");
         let (com, decom) = party_keys.phase1_broadcast_phase3_proof_of_correct_key();
 
-        let mut purpose = "com";
-        self.postmsg_mcast(key_mates.iter(), purpose, &com)
+        purpose = "com";
+        tweaked_self.postmsg_mcast(key_mates.iter(), purpose, &com)
             .await
             .catch_()?;
-        let com_kv: HashMap<u16, KeyGenBroadcastMessage1> = self
+        let com_kv: HashMap<u16, KeyGenBroadcastMessage1> = tweaked_self
             .getmsg_mcast(key_mates.iter(), purpose)
             .await
             .catch_()?;
 
         purpose = "decom";
-        self.postmsg_mcast(key_mates.iter(), purpose, &decom)
+        tweaked_self.postmsg_mcast(key_mates.iter(), purpose, &decom)
             .await
             .catch_()?;
-        let decom_kv: HashMap<u16, KeyGenDecommitMessage1> = self
+        let decom_kv: HashMap<u16, KeyGenDecommitMessage1> = tweaked_self
             .getmsg_mcast(key_mates.iter(), purpose)
             .await
             .catch_()?;
@@ -265,11 +269,11 @@ impl AlgoReshare for MpcMember {
             let key: Vec<u8> = BigInt::to_bytes(&aeskey_kv[member_id]);
             let plain: Vec<u8> = BigInt::to_bytes(&secret_share_kv[member_id].to_bigint());
             let aead: AEAD = aes_encrypt(&key, &plain).catch_()?;
-            self.postmsg_p2p(*member_id, purpose, &aead)
+            tweaked_self.postmsg_p2p(*member_id, purpose, &aead)
                 .await
                 .catch_()?;
         }
-        let aead_others_kv: HashMap<u16, AEAD> = self
+        let aead_others_kv: HashMap<u16, AEAD> = tweaked_self
             .getmsg_mcast(key_mates_others.iter(), purpose)
             .await
             .catch_()?;
@@ -289,10 +293,10 @@ impl AlgoReshare for MpcMember {
         println!("Exchanged secret shares.");
 
         purpose = "vss commitment";
-        self.postmsg_mcast(key_mates.iter(), purpose, &vss_scheme)
+        tweaked_self.postmsg_mcast(key_mates.iter(), purpose, &vss_scheme)
             .await
             .catch_()?;
-        let vss_scheme_kv: HashMap<u16, VerifiableSS<Secp256k1>> = self
+        let vss_scheme_kv: HashMap<u16, VerifiableSS<Secp256k1>> = tweaked_self
             .getmsg_mcast(key_mates.iter(), purpose)
             .await
             .catch_()?;
@@ -308,10 +312,10 @@ impl AlgoReshare for MpcMember {
             .unwrap();
 
         purpose = "dlog proof";
-        self.postmsg_mcast(key_mates.iter(), purpose, &dlog_proof)
+        tweaked_self.postmsg_mcast(key_mates.iter(), purpose, &dlog_proof)
             .await
             .catch_()?;
-        let dlog_proof_kv: HashMap<u16, DLogProof<Secp256k1, Sha256>> = self
+        let dlog_proof_kv: HashMap<u16, DLogProof<Secp256k1, Sha256>> = tweaked_self
             .getmsg_mcast(key_mates.iter(), purpose)
             .await
             .catch_()?;
@@ -327,13 +331,38 @@ impl AlgoReshare for MpcMember {
             .map(|(member_id, com)| (*member_id, com.e.clone()))
             .collect();
 
+        let key_arch = KeyArch {
+            key_quorum: self.key_quorum,
+            group_quora: {
+                let mut res = HashMap::new();
+                for (group_id, group_quorum) in &self.group_quora {
+                    if self.reshare_groups.contains(group_id) {
+                        let new_group_id = *group_id + 1 - min_receiver_group_id;
+                        res.insert(new_group_id, *group_quorum);
+                    }
+                }
+                res
+            },
+            member_group: {
+                let mut res = HashMap::new();
+                for (member_id, group_id) in &self.member_group {
+                    if self.reshare_members.contains(member_id) {
+                        let new_member_id = member_id + 1 - min_receiver_id;
+                        let new_group_id = group_id + 1 - min_receiver_group_id;
+                        res.insert(new_member_id, new_group_id);
+                    }
+                }
+                res
+            },
+        };
+
         let keystore = KeyStore {
             party_keys,
             shared_keys,
             chain_code,
             vss_scheme_kv,
             paillier_key_kv,
-            key_arch: KeyArch::default(),
+            key_arch,
             member_id: my_id,
         };
 
