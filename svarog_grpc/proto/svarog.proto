@@ -113,6 +113,7 @@ message SessionFruit {
     oneof value {
         string root_xpub = 1; // keygen or reshare result
         Signatures signatures = 2; // sign result
+        bool provided = 3; // provider of keygen_menm or reshare
     }
 }
 

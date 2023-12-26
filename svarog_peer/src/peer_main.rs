@@ -1,15 +1,13 @@
-use blake2::{digest::consts::U16, Blake2b, Digest};
 use sqlx::{Row, SqlitePool};
-use std::cmp::{max, min};
 use std::path;
 use svarog_grpc::prelude::{prost::Message, tonic::transport::Server};
 use svarog_grpc::protogen::svarog::mpc_peer_server::MpcPeerServer;
 use svarog_grpc::protogen::svarog::{
     mpc_peer_server::MpcPeer, JoinSessionRequest, SessionFruit, SessionId, Void, Whistle,
 };
-use svarog_grpc::protogen::svarog::{SessionConfig, Signatures};
-use svarog_mpc_sdk::biz_algo::{AlgoKeygen, AlgoSign, KeyStore};
-use svarog_mpc_sdk::{now, CompressAble, DecompressAble, MpcMember, SessionFruitValue};
+use svarog_grpc::protogen::svarog::{Signatures, TxHash};
+use svarog_mpc_sdk::biz_algo::{AlgoKeygen, AlgoReshare, AlgoSign, KeyStore};
+use svarog_mpc_sdk::{CompressAble, DecompressAble, MpcMember, SessionFruitValue};
 use tokio::fs::File;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tonic::{async_trait, Request, Response};
@@ -157,36 +155,32 @@ impl MpcPeer for MpcPeerService {
             let conf_ = conf.clone();
             let req_ = req.clone();
             tokio::spawn(async move {
-                let key_name = &req_.key_name;
-                let token = &req_.token;
+                let fruit: SessionFruit;
+                let ses_type = &conf_.session_type;
+                if ses_type == "keygen" {
+                    fruit = run_keygen_session(&mpc_member_, &mpc_member_.session_id)
+                        .await
+                        .unwrap();
+                } else if ses_type == "keygen_mnem" {
+                    todo!("«keygen_mnem» not implemented yet");
+                } else if ses_type == "sign" {
+                    fruit = run_sign_session(
+                        &mpc_member_,
+                        &conf_.to_sign.unwrap().tx_hashes,
+                        &req_.key_name,
+                        &req_.token,
+                    )
+                    .await
+                    // .catch("blabla", &format!("field1: {}, field2: {}, blabla", ...))
+                    .unwrap();
+                } else if ses_type == "reshare" {
+                    fruit = run_reshare_provider(&mpc_member_, &req_.key_name, &req_.token)
+                        .await
+                        .unwrap();
+                } else {
+                    panic!("invalid session type «{}»", ses_type);
+                }
 
-                let fruit: SessionFruit = match conf.session_type.as_str() {
-                    "keygen" => match run_keygen_session(&mpc_member_, &conf_, key_name).await {
-                        Ok(fruit) => fruit,
-                        Err(err) => {
-                            error!("Failed to run «keygen» session (member {} at session {} with key {}) --\n {}",
-                                &mpc_member_.member_name, &conf_.session_id, key_name, err);
-                            panic!("{:#?}", err);
-                        }
-                    },
-                    "sign" => match run_sign_session(&mpc_member_, &conf_, key_name, token).await {
-                        Ok(fruit) => fruit,
-                        Err(err) => {
-                            error!("Failed to run «sign» session (member {} at session {} with key {}) --\n {}",
-                            &mpc_member_.member_name, &conf_.session_id, key_name, err);
-                            panic!("{:#?}", err);
-                        }
-                    },
-                    "keygen_mnem" => {
-                        todo!("«keygen_mnem» not implemented yet");
-                    }
-                    "reshare" => {
-                        todo!("«reshare» not implemented yet");
-                    }
-                    _st => {
-                        panic!("invalid session type «{}»", _st);
-                    }
-                };
                 let sql = "INSERT INTO peer_session (session_id, member_name, expire_at, fruit) VALUES (?, ?, ?, ?)";
                 let fruit_bytes = fruit.encode_to_vec();
                 let _res = sqlx::query(sql)
@@ -205,9 +199,33 @@ impl MpcPeer for MpcPeerService {
 
         if reshare1 {
             // execute mpc algo in another thread.
-            return Err(tonic::Status::unimplemented(
-                "«Reshare» not implemented yet",
-            ));
+            let mut mpc_member_ = mpc_member.clone();
+            mpc_member_
+                .use_session_config(&conf, &req.member_name, false)
+                .map_err(|e| tonic::Status::internal(e.to_string()))?;
+
+            let db = self.sqlite_pool.clone();
+            let conf_ = conf.clone();
+            let req_ = req.clone();
+            tokio::spawn(async move {
+                let fruit = run_reshare_consumer(&mpc_member_, &mpc_member_.session_id)
+                    .await
+                    .unwrap();
+
+                let sql = "INSERT INTO peer_session (session_id, member_name, expire_at, fruit) VALUES (?, ?, ?, ?)";
+                let fruit_bytes = fruit.encode_to_vec();
+                let _res = sqlx::query(sql)
+                    .bind(&conf_.session_id)
+                    .bind(&req_.member_name)
+                    .bind(expire_at)
+                    .bind(fruit_bytes)
+                    .execute(&db)
+                    .await;
+                if let Err(err) = _res {
+                    error!("Failed to insert fruit to db -- {}", err);
+                    panic!("{:#?}", err);
+                };
+            });
         }
 
         Ok(Response::new(Void {}))
@@ -268,26 +286,11 @@ impl MpcPeer for MpcPeerService {
     }
 }
 
-async fn run_keygen_session(
-    mpc_member: &MpcMember,
-    conf: &SessionConfig,
-    key_name: &str,
-) -> Outcome<SessionFruit> {
-    println!(
-        "member: {}, key_quorum: {}, ses_arch: {:#?}",
-        &mpc_member.member_name, &conf.key_quorum, &conf.groups
-    );
+async fn run_keygen_session(mpc_member: &MpcMember, key_name: &str) -> Outcome<SessionFruit> {
     let keystore = mpc_member.algo_keygen().await.catch_()?;
 
     let buf = keystore.compress().catch_()?;
-    let path = if key_name.is_empty() {
-        format!(
-            "assets/{}@{}.keystore",
-            &mpc_member.member_name, conf.session_id
-        )
-    } else {
-        format!("assets/{}@{}.keystore", &mpc_member.member_name, key_name)
-    };
+    let path = format!("assets/{}@{}.keystore", &mpc_member.member_name, key_name);
     let mut file = File::create(&path).await.catch_()?;
     file.write_all(&buf).await.catch_()?;
 
@@ -301,47 +304,25 @@ async fn run_keygen_session(
 
 async fn run_sign_session(
     mpc_member: &MpcMember,
-    conf: &SessionConfig,
+    tasks: &[TxHash],
     key_name: &str,
-    token: &str,
+    _token: &str,
 ) -> Outcome<SessionFruit> {
-    println!(
-        "member: {}, key_quorum: {}, ses_arch: {:#?}",
-        &mpc_member.member_name, &conf.key_quorum, &conf.groups
-    );
-    let tasks = conf.to_sign.as_ref().ifnone_()?.tx_hashes.clone();
     assert_throw!(tasks.len() > 0, "No task to sign.");
     if tasks.len() > 1 {
         throw!("Unimplemented", "Batch sign not ready yet");
     }
 
-    let path = &format!("assets/{}@{}.keystore", &mpc_member.member_name, key_name);
-    let mut file = File::open(path).await.catch_()?;
-    let mut buf: Vec<u8> = Vec::new();
-    file.read_to_end(&mut buf).await.catch_()?;
-    let keystore: KeyStore = buf.decompress().catch_()?;
+    let keystore: KeyStore = {
+        let path = &format!("assets/{}@{}.keystore", &mpc_member.member_name, key_name);
+        let mut file = File::open(path).await.catch_()?;
+        let mut buf: Vec<u8> = Vec::new();
+        file.read_to_end(&mut buf).await.catch_()?;
+        buf.decompress().catch_()?
+    };
 
-    if false {
-        // TODO: Enable token check
-        let root_xpub = keystore.attr_root_xpub().catch_()?;
-        let minutes = now() / 60;
-        let minutes_min = min(minutes, minutes - 3);
-        let minutes_max = max(minutes, minutes + 3);
-        let mut allow_to_use = false;
-        for minute in minutes_min..=minutes_max {
-            let text = format!("{}{}", &root_xpub, minute);
-            let mut hasher: Blake2b<U16> = Blake2b::new();
-            hasher.update(text.as_bytes());
-            let hash = hasher.finalize();
-            let hex_hash = hex::encode(hash);
-            if hex_hash == token {
-                allow_to_use = true;
-                break;
-            }
-        }
-        assert_throw!(allow_to_use, "Wrong token. Not allowed to use this key.");
-    }
-
+    // TODO: Enable token check
+    // keystore.validate_token(token).catch_()?;
     // TODO: Ensure keyarch is same as session config
 
     let mut sigs = Vec::new();
@@ -356,6 +337,54 @@ async fn run_sign_session(
         value: Some(SessionFruitValue::Signatures(Signatures {
             signatures: sigs,
         })),
+    };
+
+    Ok(fruit)
+}
+
+async fn run_reshare_provider(
+    mpc_member: &MpcMember,
+    key_name_src: &str,
+    _token: &str,
+) -> Outcome<SessionFruit> {
+    let keystore: KeyStore = {
+        let path = &format!(
+            "assets/{}@{}.keystore",
+            &mpc_member.member_name, key_name_src
+        );
+        let mut file = File::open(path).await.catch_()?;
+        let mut buf: Vec<u8> = Vec::new();
+        file.read_to_end(&mut buf).await.catch_()?;
+        buf.decompress().catch_()?
+    };
+
+    // TODO: Enable token check
+    // keystore.validate_token(token).catch_()?;
+    // TODO: Ensure keyarch is same as session config
+
+    mpc_member.algo_reshare_provider(&keystore).await.catch_()?;
+
+    let fruit = SessionFruit {
+        value: Some(SessionFruitValue::Provided(true)),
+    };
+
+    Ok(fruit)
+}
+
+async fn run_reshare_consumer(mpc_member: &MpcMember, key_name_dst: &str) -> Outcome<SessionFruit> {
+    let keystore = mpc_member.algo_reshare_consumer().await.catch_()?;
+
+    let buf = keystore.compress().catch_()?;
+    let path = format!(
+        "assets/{}@{}.keystore",
+        &mpc_member.member_name, key_name_dst
+    );
+    let mut file = File::create(&path).await.catch_()?;
+    file.write_all(&buf).await.catch_()?;
+
+    let root_xpub = keystore.attr_root_xpub().catch_()?;
+    let fruit = SessionFruit {
+        value: Some(SessionFruitValue::RootXpub(root_xpub)),
     };
 
     Ok(fruit)

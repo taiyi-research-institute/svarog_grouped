@@ -24,7 +24,7 @@ pub struct MpcMember {
     pub reshare_groups: HashSet<u16>,
     pub reshare_members: HashSet<u16>,
 
-    session_id: String,
+    pub session_id: String,
     pub expire_at: u64,
     grpc_service_url: String,
 }

@@ -8,6 +8,7 @@ aes-gcm = { version = "0.9", features = ["std"] }
 anyhow = { version = "1.0", features = ["backtrace", "std"] }
 bip32 = { version = "0.5", features = ["secp256k1", "alloc"] }
 bitcoin = { version = "0.29", features = ["serde"] }
+blake2 = "0.10"
 centipede = { version = "0.3", default_features = false }
 chrono = "0.4"
 clap = { version = "4.3", features = ["derive"] }

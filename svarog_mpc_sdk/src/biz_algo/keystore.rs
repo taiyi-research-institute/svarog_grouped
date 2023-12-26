@@ -1,11 +1,12 @@
-use std::{collections::HashMap, ops::Deref};
+use std::{collections::HashMap, ops::Deref, cmp::{min, max}};
 
 use crate::{
     assert_throw,
     exception::*,
     gg18::{feldman_vss::VerifiableSS, multi_party_ecdsa::*},
-    CompressAble, DecompressAble,
+    CompressAble, DecompressAble, now,
 };
+use blake2::{digest::consts::U16, Blake2b, Digest};
 use bip32::{ChildNumber, ExtendedKey, ExtendedKeyAttrs, Prefix};
 use curv::elliptic::curves::Secp256k1;
 use paillier::EncryptionKey;
@@ -54,6 +55,27 @@ impl KeyStore {
         let point = &self.shared_keys.y;
         let pk = point.to_bytes(compress).deref().to_vec();
         pk
+    }
+
+    pub fn validate_token(&self, token: &str) -> Outcome<()> {
+        let root_xpub = self.attr_root_xpub().catch_()?;
+        let minutes = now() / 60;
+        let minutes_min = min(minutes, minutes - 3);
+        let minutes_max = max(minutes, minutes + 3);
+        let mut allow_to_use = false;
+        for minute in minutes_min..=minutes_max {
+            let text = format!("{}{}", &root_xpub, minute);
+            let mut hasher: Blake2b<U16> = Blake2b::new();
+            hasher.update(text.as_bytes());
+            let hash = hasher.finalize();
+            let hex_hash = hex::encode(hash);
+            if hex_hash == token {
+                allow_to_use = true;
+                break;
+            }
+        }
+        assert_throw!(allow_to_use, "Wrong token. Not allowed to use this key.");
+        Ok(())
     }
 }
 
