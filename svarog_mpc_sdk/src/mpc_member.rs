@@ -1,6 +1,5 @@
 use miniz_oxide::{deflate::compress_to_vec, inflate::decompress_to_vec};
 use serde::{de::DeserializeOwned, Serialize};
-use svarog_grpc::protogen::svarog::PurposeToClear;
 use std::collections::{HashMap, HashSet, VecDeque};
 use std::time::{SystemTime, UNIX_EPOCH};
 use svarog_grpc::protogen::svarog::{
@@ -133,19 +132,6 @@ impl MpcMember {
             session_id: self.session_id.clone(),
         };
         grpc_client.terminate_session(req).await.catch_()?;
-        Ok(())
-    }
-
-    pub async fn clear_purpose(&self, purpose: &str) -> Outcome<()> {
-        let mut grpc_client = MpcSessionManagerClient::connect(self.grpc_service_url.to_owned())
-            .await
-            .catch_()?;
-        self.assert_on_time().catch_()?;
-        let req = PurposeToClear {
-            session_id: self.session_id.clone(),
-            purpose: purpose.to_string(),
-        };
-        grpc_client.clear_purpose(req).await.catch_()?;
         Ok(())
     }
 

@@ -17,5 +17,7 @@ VALUES (?, ?, ?, ?, ?, ?)
 "#;
 
 pub const SQL_SELECT_SESSION_FRUIT: &str = r#"
-SELECT * FROM peer_session WHERE session_id = ? ORDER BY member_id ASC
+SELECT * FROM peer_session
+WHERE session_id = ? AND member_name = ?
+ORDER BY member_id ASC
 "#;

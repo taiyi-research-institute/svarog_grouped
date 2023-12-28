@@ -6,7 +6,7 @@ package svarog;
 // All called by biz
 service MpcPeer {
     rpc JoinSession(JoinSessionRequest) returns (Void);
-    rpc GetSessionFruit(SessionId) returns (SessionFruit);
+    rpc GetSessionFruit(GetSessionFruitRequest) returns (SessionFruit);
     
     // When biz detected wrong Tx, call this to abort session.
     rpc AbortSession(Whistle) returns (Void);
@@ -25,7 +25,6 @@ service MpcSessionManager {
     rpc PostMessage(Message) returns (Void);
     rpc GetMessage(Message) returns (Message);
     rpc TerminateSession(SessionId) returns (Void);
-    rpc ClearPurpose(PurposeToClear) returns (Void);
 }
 
 message SessionConfig { 
@@ -48,6 +47,11 @@ message JoinSessionRequest {
 
     string token = 4; // Used for authentication
     string mnemonics = 5; // Only end-user provides this. Leave blank for API calls.
+}
+
+message GetSessionFruitRequest {
+    string session_id = 1;
+    string member_name = 2;
 }
 
 message Group {
@@ -102,11 +106,6 @@ message Message {
     uint64 member_id_src = 3;
     uint64 member_id_dst = 4;
     bytes body = 5; // if set to [], remaining fields are used as index.
-}
-
-message PurposeToClear {
-    string session_id = 1;
-    string purpose = 2;
 }
 
 message SessionFruit {

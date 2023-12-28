@@ -29,7 +29,7 @@ const (
 // For semantics around ctx use and closing/ending streaming RPCs, please refer to https://pkg.go.dev/google.golang.org/grpc/?tab=doc#ClientConn.NewStream.
 type MpcPeerClient interface {
 	JoinSession(ctx context.Context, in *JoinSessionRequest, opts ...grpc.CallOption) (*Void, error)
-	GetSessionFruit(ctx context.Context, in *SessionId, opts ...grpc.CallOption) (*SessionFruit, error)
+	GetSessionFruit(ctx context.Context, in *GetSessionFruitRequest, opts ...grpc.CallOption) (*SessionFruit, error)
 	// When biz detected wrong Tx, call this to abort session.
 	AbortSession(ctx context.Context, in *Whistle, opts ...grpc.CallOption) (*Void, error)
 }
@@ -51,7 +51,7 @@ func (c *mpcPeerClient) JoinSession(ctx context.Context, in *JoinSessionRequest,
 	return out, nil
 }
 
-func (c *mpcPeerClient) GetSessionFruit(ctx context.Context, in *SessionId, opts ...grpc.CallOption) (*SessionFruit, error) {
+func (c *mpcPeerClient) GetSessionFruit(ctx context.Context, in *GetSessionFruitRequest, opts ...grpc.CallOption) (*SessionFruit, error) {
 	out := new(SessionFruit)
 	err := c.cc.Invoke(ctx, MpcPeer_GetSessionFruit_FullMethodName, in, out, opts...)
 	if err != nil {
@@ -74,7 +74,7 @@ func (c *mpcPeerClient) AbortSession(ctx context.Context, in *Whistle, opts ...g
 // for forward compatibility
 type MpcPeerServer interface {
 	JoinSession(context.Context, *JoinSessionRequest) (*Void, error)
-	GetSessionFruit(context.Context, *SessionId) (*SessionFruit, error)
+	GetSessionFruit(context.Context, *GetSessionFruitRequest) (*SessionFruit, error)
 	// When biz detected wrong Tx, call this to abort session.
 	AbortSession(context.Context, *Whistle) (*Void, error)
 	mustEmbedUnimplementedMpcPeerServer()
@@ -87,7 +87,7 @@ type UnimplementedMpcPeerServer struct {
 func (UnimplementedMpcPeerServer) JoinSession(context.Context, *JoinSessionRequest) (*Void, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method JoinSession not implemented")
 }
-func (UnimplementedMpcPeerServer) GetSessionFruit(context.Context, *SessionId) (*SessionFruit, error) {
+func (UnimplementedMpcPeerServer) GetSessionFruit(context.Context, *GetSessionFruitRequest) (*SessionFruit, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method GetSessionFruit not implemented")
 }
 func (UnimplementedMpcPeerServer) AbortSession(context.Context, *Whistle) (*Void, error) {
@@ -125,7 +125,7 @@ func _MpcPeer_JoinSession_Handler(srv interface{}, ctx context.Context, dec func
 }
 
 func _MpcPeer_GetSessionFruit_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
-	in := new(SessionId)
+	in := new(GetSessionFruitRequest)
 	if err := dec(in); err != nil {
 		return nil, err
 	}
@@ -137,7 +137,7 @@ func _MpcPeer_GetSessionFruit_Handler(srv interface{}, ctx context.Context, dec 
 		FullMethod: MpcPeer_GetSessionFruit_FullMethodName,
 	}
 	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
-		return srv.(MpcPeerServer).GetSessionFruit(ctx, req.(*SessionId))
+		return srv.(MpcPeerServer).GetSessionFruit(ctx, req.(*GetSessionFruitRequest))
 	}
 	return interceptor(ctx, in, info, handler)
 }
@@ -191,7 +191,6 @@ const (
 	MpcSessionManager_PostMessage_FullMethodName      = "/svarog.MpcSessionManager/PostMessage"
 	MpcSessionManager_GetMessage_FullMethodName       = "/svarog.MpcSessionManager/GetMessage"
 	MpcSessionManager_TerminateSession_FullMethodName = "/svarog.MpcSessionManager/TerminateSession"
-	MpcSessionManager_ClearPurpose_FullMethodName     = "/svarog.MpcSessionManager/ClearPurpose"
 )
 
 // MpcSessionManagerClient is the client API for MpcSessionManager service.
@@ -206,7 +205,6 @@ type MpcSessionManagerClient interface {
 	PostMessage(ctx context.Context, in *Message, opts ...grpc.CallOption) (*Void, error)
 	GetMessage(ctx context.Context, in *Message, opts ...grpc.CallOption) (*Message, error)
 	TerminateSession(ctx context.Context, in *SessionId, opts ...grpc.CallOption) (*Void, error)
-	ClearPurpose(ctx context.Context, in *PurposeToClear, opts ...grpc.CallOption) (*Void, error)
 }
 
 type mpcSessionManagerClient struct {
@@ -271,15 +269,6 @@ func (c *mpcSessionManagerClient) TerminateSession(ctx context.Context, in *Sess
 	return out, nil
 }
 
-func (c *mpcSessionManagerClient) ClearPurpose(ctx context.Context, in *PurposeToClear, opts ...grpc.CallOption) (*Void, error) {
-	out := new(Void)
-	err := c.cc.Invoke(ctx, MpcSessionManager_ClearPurpose_FullMethodName, in, out, opts...)
-	if err != nil {
-		return nil, err
-	}
-	return out, nil
-}
-
 // MpcSessionManagerServer is the server API for MpcSessionManager service.
 // All implementations must embed UnimplementedMpcSessionManagerServer
 // for forward compatibility
@@ -292,7 +281,6 @@ type MpcSessionManagerServer interface {
 	PostMessage(context.Context, *Message) (*Void, error)
 	GetMessage(context.Context, *Message) (*Message, error)
 	TerminateSession(context.Context, *SessionId) (*Void, error)
-	ClearPurpose(context.Context, *PurposeToClear) (*Void, error)
 	mustEmbedUnimplementedMpcSessionManagerServer()
 }
 
@@ -317,9 +305,6 @@ func (UnimplementedMpcSessionManagerServer) GetMessage(context.Context, *Message
 }
 func (UnimplementedMpcSessionManagerServer) TerminateSession(context.Context, *SessionId) (*Void, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method TerminateSession not implemented")
-}
-func (UnimplementedMpcSessionManagerServer) ClearPurpose(context.Context, *PurposeToClear) (*Void, error) {
-	return nil, status.Errorf(codes.Unimplemented, "method ClearPurpose not implemented")
 }
 func (UnimplementedMpcSessionManagerServer) mustEmbedUnimplementedMpcSessionManagerServer() {}
 
@@ -442,24 +427,6 @@ func _MpcSessionManager_TerminateSession_Handler(srv interface{}, ctx context.Co
 	return interceptor(ctx, in, info, handler)
 }
 
-func _MpcSessionManager_ClearPurpose_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
-	in := new(PurposeToClear)
-	if err := dec(in); err != nil {
-		return nil, err
-	}
-	if interceptor == nil {
-		return srv.(MpcSessionManagerServer).ClearPurpose(ctx, in)
-	}
-	info := &grpc.UnaryServerInfo{
-		Server:     srv,
-		FullMethod: MpcSessionManager_ClearPurpose_FullMethodName,
-	}
-	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
-		return srv.(MpcSessionManagerServer).ClearPurpose(ctx, req.(*PurposeToClear))
-	}
-	return interceptor(ctx, in, info, handler)
-}
-
 // MpcSessionManager_ServiceDesc is the grpc.ServiceDesc for MpcSessionManager service.
 // It's only intended for direct use with grpc.RegisterService,
 // and not to be introspected or modified (even as a copy)
@@ -490,10 +457,6 @@ var MpcSessionManager_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "TerminateSession",
 			Handler:    _MpcSessionManager_TerminateSession_Handler,
-		},
-		{
-			MethodName: "ClearPurpose",
-			Handler:    _MpcSessionManager_ClearPurpose_Handler,
 		},
 	},
 	Streams:  []grpc.StreamDesc{},

@@ -12,13 +12,12 @@ pub mod prelude {
     };
 }
 use prelude::*;
+use svarog_grpc::protogen::svarog::GetSessionFruitRequest;
 
 use std::path;
 use svarog_grpc::prelude::{prost::Message, tonic::transport::Server};
 use svarog_grpc::protogen::svarog::mpc_peer_server::MpcPeerServer;
-use svarog_grpc::protogen::svarog::{
-    mpc_peer_server::MpcPeer, JoinSessionRequest, SessionId, Void, Whistle,
-};
+use svarog_grpc::protogen::svarog::{mpc_peer_server::MpcPeer, JoinSessionRequest, Void, Whistle};
 
 mod config;
 use config::MpcServiceConfig;
@@ -163,6 +162,7 @@ impl MpcPeer for MpcPeerService {
                     mpc_member.clone(),
                     req.key_name.clone(),
                     req.token.clone(),
+                    false,
                 );
             }
             Role::Reshare(ReshareRole::Consumer) => {
@@ -180,6 +180,7 @@ impl MpcPeer for MpcPeerService {
                     mpc_member.clone(),
                     req.key_name.clone(),
                     req.token.clone(),
+                    true,
                 );
                 mpc_member
                     .use_session_config(&conf, &req.member_name, true)
@@ -193,11 +194,13 @@ impl MpcPeer for MpcPeerService {
 
     async fn get_session_fruit(
         &self,
-        request: Request<SessionId>,
+        request: Request<GetSessionFruitRequest>,
     ) -> Result<Response<SessionFruit>, tonic::Status> {
-        let ses_id = request.into_inner().session_id;
+        let ses_id = request.get_ref().session_id.as_str();
+        let mem_name = request.get_ref().member_name.as_str();
         let _rows = sqlx::query(SQL_SELECT_SESSION_FRUIT)
-            .bind(&ses_id)
+            .bind(ses_id)
+            .bind(mem_name)
             .fetch_all(&self.sqlite_pool)
             .await;
         if let Err(err) = _rows {
@@ -209,70 +212,35 @@ impl MpcPeer for MpcPeerService {
         };
         let rows = _rows.unwrap();
 
-        let default = SessionFruit::default();
-        let mut res = default.clone();
-        let mut exs: Vec<(i64, String, String)> = Vec::new();
-        for row in &rows {
-            let mem_id: i64 = row.get("member_id");
-            let mem_name: String = row.get("member_name");
-            let fb_: Option<Vec<u8>> = row.get("fruit");
-            let ex_: Option<String> = row.get("exception");
-            if let Some(ex) = ex_ {
-                exs.push((mem_id, mem_name, ex));
+        if rows.len() == 0 {
+            return Ok(Response::new(SessionFruit::default()));
+        } else if rows.len() == 1 {
+            let row = &rows[0];
+            let fb: Option<Vec<u8>> = row.get("fruit");
+            let ex: Option<String> = row.get("exception");
+            if let Some(ex) = ex {
+                return Err(tonic::Status::internal(ex));
             }
+            let fb = fb.unwrap(); // fb is Some, iff ex is None
 
-            // if exception list is non-empty, do not decode the fruit
-            if exs.len() > 0 {
-                continue;
-            }
-
-            if let Some(fb) = fb_ {
-                let _fruit = SessionFruit::decode(fb.as_slice());
-                if let Err(err) = _fruit {
-                    error!(
-                        "Failed to decode fruit of session {} from db -- {}",
-                        &ses_id, &err
-                    );
-                    return Err(tonic::Status::internal(err.to_string()));
-                };
-
-                // ignore PROVIDER fruits
-                let fruit = _fruit.unwrap();
-                if let Some(value) = &fruit.value {
-                    if let SessionFruitValue::RootXpub(x) = value {
-                        if x == "PROVIDED" {
-                            continue;
-                        }
-                    }
-                }
-
-                // set fruit
-                if res == default {
-                    res = fruit.clone();
-                } else {
-                    // check if inconsistent with the fruit previously set
-                    if res != fruit {
-                        error!("Fruit of session {} from db is not consistent", &ses_id);
-                        return Err(tonic::Status::internal(
-                            "Fruit of session is not consistent".to_string(),
-                        ));
-                    }
-                }
-            }
+            let _fruit = SessionFruit::decode(fb.as_slice());
+            if let Err(err) = _fruit {
+                error!("Failed to decode fruit of member {} -- {}", mem_name, &err);
+                return Err(tonic::Status::internal(err.to_string()));
+            };
+            let fruit = _fruit.unwrap();
+            return Ok(Response::new(fruit));
+        } else {
+            // In case a victim being both provider and consumer.
+            let mut report: String = String::new();
+            let row = &rows[0];
+            let ex: Option<String> = row.get("exception");
+            report.push_str(&ex.unwrap());
+            let row = &rows[1];
+            let ex: Option<String> = row.get("exception");
+            report.push_str(&ex.unwrap());
+            return Err(tonic::Status::internal(report));
         }
-
-        if exs.len() > 0 {
-            let mut exs_str = String::new();
-            for (mem_id, mem_name, ex) in exs {
-                exs_str.push_str(&format!(
-                    "Member {} (#{}) failed with exception: {}\n",
-                    mem_name, mem_id, ex
-                ));
-            }
-            return Err(tonic::Status::internal(exs_str));
-        }
-
-        Ok(Response::new(res))
     }
 
     async fn abort_session(

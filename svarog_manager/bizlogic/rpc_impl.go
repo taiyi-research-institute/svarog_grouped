@@ -323,25 +323,6 @@ func (srv *SessionManager) TerminateSession(
 	return resp, nil
 }
 
-func (srv *SessionManager) ClearPurpose(
-	ctx context.Context,
-	req *pb.PurposeToClear,
-) (resp *pb.Void, err error) {
-	db := srv.db
-	resp = &pb.Void{}
-
-	err = db.
-		Exec(`DELETE FROM mpc_messages WHERE session_id = ? AND purpose = ?`,
-			req.SessionId, req.Purpose).
-		Error
-	if err != nil {
-		srv.Error(err)
-		return nil, err
-	}
-
-	return resp, nil
-}
-
 func (srv *SessionManager) GetSessionConfig(
 	ctx context.Context,
 	req *pb.SessionId,

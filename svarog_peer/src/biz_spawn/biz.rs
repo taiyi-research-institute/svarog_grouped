@@ -1,3 +1,4 @@
+use super::SQL_INSERT_SESSION_FRUIT;
 use crate::prelude::*;
 use svarog_grpc::{
     prelude::prost::Message,
@@ -104,4 +105,32 @@ pub async fn biz_reshare_consumer(mpc_member: &MpcMember) -> Outcome<Vec<u8>> {
     let fruit_bytes = fruit.encode_to_vec();
 
     Ok(fruit_bytes)
+}
+
+#[async_trait]
+pub trait PostFruit {
+    async fn post_fruit(&self, db: &SqlitePool, fruit_bytes: Outcome<Vec<u8>>);
+}
+
+#[async_trait]
+impl PostFruit for MpcMember {
+    async fn post_fruit(&self, db: &SqlitePool, fruit_bytes: Outcome<Vec<u8>>) {
+        let (fb, ex) = match fruit_bytes {
+            Ok(fb) => (Some(fb), None),
+            Err(ex) => (None, Some(ex.to_string())),
+        };
+        let _query = sqlx::query(SQL_INSERT_SESSION_FRUIT)
+            .bind(&self.session_id)
+            .bind(&self.member_id)
+            .bind(&self.member_name)
+            .bind(&self.expire_at)
+            .bind(fb)
+            .bind(ex)
+            .execute(db)
+            .await;
+        if let Err(err) = _query {
+            error!("Failed to insert fruit to db -- {}", err);
+            panic!("{:#?}", err);
+        };
+    }
 }

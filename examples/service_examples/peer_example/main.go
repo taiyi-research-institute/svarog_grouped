@@ -151,8 +151,9 @@ func PeerKeygen(
 	}
 
 	for { // poll session fruit
-		ses_fruit, err := peer.GetSessionFruit(context.Background(), &pb.SessionId{
-			SessionId: ses_id,
+		ses_fruit, err := peer.GetSessionFruit(context.Background(), &pb.GetSessionFruitRequest{
+			SessionId:  ses_id,
+			MemberName: member_name,
 		})
 		if err != nil {
 			return "", fmt.Errorf("Failed to get session fruit: %v\n", err)
@@ -200,8 +201,9 @@ func PeerSign(
 	}
 
 	for { // poll session fruit
-		ses_fruit, err := peer.GetSessionFruit(context.Background(), &pb.SessionId{
-			SessionId: ses_id,
+		ses_fruit, err := peer.GetSessionFruit(context.Background(), &pb.GetSessionFruitRequest{
+			SessionId:  ses_id,
+			MemberName: member_name,
 		})
 		if err != nil {
 			return nil, fmt.Errorf("Failed to get session fruit: %v\n", err)
@@ -246,8 +248,9 @@ func PeerReshare(
 	}
 
 	for { // poll session fruit
-		ses_fruit, err := peer.GetSessionFruit(context.Background(), &pb.SessionId{
-			SessionId: ses_id,
+		ses_fruit, err := peer.GetSessionFruit(context.Background(), &pb.GetSessionFruitRequest{
+			SessionId:  ses_id,
+			MemberName: member_name,
 		})
 		if err != nil {
 			return "", fmt.Errorf("Failed to get session fruit: %v\n", err)

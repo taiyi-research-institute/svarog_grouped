@@ -46,6 +46,15 @@ pub struct JoinSessionRequest {
 #[derive(serde::Serialize, serde::Deserialize)]
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
+pub struct GetSessionFruitRequest {
+    #[prost(string, tag = "1")]
+    pub session_id: ::prost::alloc::string::String,
+    #[prost(string, tag = "2")]
+    pub member_name: ::prost::alloc::string::String,
+}
+#[derive(serde::Serialize, serde::Deserialize)]
+#[allow(clippy::derive_partial_eq_without_eq)]
+#[derive(Clone, PartialEq, ::prost::Message)]
 pub struct Group {
     #[prost(string, tag = "1")]
     pub group_name: ::prost::alloc::string::String,
@@ -145,15 +154,6 @@ pub struct Message {
     /// if set to \[\], remaining fields are used as index.
     #[prost(bytes = "vec", tag = "5")]
     pub body: ::prost::alloc::vec::Vec<u8>,
-}
-#[derive(serde::Serialize, serde::Deserialize)]
-#[allow(clippy::derive_partial_eq_without_eq)]
-#[derive(Clone, PartialEq, ::prost::Message)]
-pub struct PurposeToClear {
-    #[prost(string, tag = "1")]
-    pub session_id: ::prost::alloc::string::String,
-    #[prost(string, tag = "2")]
-    pub purpose: ::prost::alloc::string::String,
 }
 #[derive(serde::Serialize, serde::Deserialize)]
 #[allow(clippy::derive_partial_eq_without_eq)]
@@ -294,7 +294,7 @@ pub mod mpc_peer_client {
         }
         pub async fn get_session_fruit(
             &mut self,
-            request: impl tonic::IntoRequest<super::SessionId>,
+            request: impl tonic::IntoRequest<super::GetSessionFruitRequest>,
         ) -> std::result::Result<tonic::Response<super::SessionFruit>, tonic::Status> {
             self.inner
                 .ready()
@@ -558,28 +558,6 @@ pub mod mpc_session_manager_client {
                 .insert(GrpcMethod::new("svarog.MpcSessionManager", "TerminateSession"));
             self.inner.unary(req, path, codec).await
         }
-        pub async fn clear_purpose(
-            &mut self,
-            request: impl tonic::IntoRequest<super::PurposeToClear>,
-        ) -> std::result::Result<tonic::Response<super::Void>, tonic::Status> {
-            self.inner
-                .ready()
-                .await
-                .map_err(|e| {
-                    tonic::Status::new(
-                        tonic::Code::Unknown,
-                        format!("Service was not ready: {}", e.into()),
-                    )
-                })?;
-            let codec = tonic::codec::ProstCodec::default();
-            let path = http::uri::PathAndQuery::from_static(
-                "/svarog.MpcSessionManager/ClearPurpose",
-            );
-            let mut req = request.into_request();
-            req.extensions_mut()
-                .insert(GrpcMethod::new("svarog.MpcSessionManager", "ClearPurpose"));
-            self.inner.unary(req, path, codec).await
-        }
     }
 }
 /// Generated server implementations.
@@ -595,7 +573,7 @@ pub mod mpc_peer_server {
         ) -> std::result::Result<tonic::Response<super::Void>, tonic::Status>;
         async fn get_session_fruit(
             &self,
-            request: tonic::Request<super::SessionId>,
+            request: tonic::Request<super::GetSessionFruitRequest>,
         ) -> std::result::Result<tonic::Response<super::SessionFruit>, tonic::Status>;
         /// When biz detected wrong Tx, call this to abort session.
         async fn abort_session(
@@ -733,7 +711,9 @@ pub mod mpc_peer_server {
                 "/svarog.MpcPeer/GetSessionFruit" => {
                     #[allow(non_camel_case_types)]
                     struct GetSessionFruitSvc<T: MpcPeer>(pub Arc<T>);
-                    impl<T: MpcPeer> tonic::server::UnaryService<super::SessionId>
+                    impl<
+                        T: MpcPeer,
+                    > tonic::server::UnaryService<super::GetSessionFruitRequest>
                     for GetSessionFruitSvc<T> {
                         type Response = super::SessionFruit;
                         type Future = BoxFuture<
@@ -742,7 +722,7 @@ pub mod mpc_peer_server {
                         >;
                         fn call(
                             &mut self,
-                            request: tonic::Request<super::SessionId>,
+                            request: tonic::Request<super::GetSessionFruitRequest>,
                         ) -> Self::Future {
                             let inner = Arc::clone(&self.0);
                             let fut = async move {
@@ -891,10 +871,6 @@ pub mod mpc_session_manager_server {
         async fn terminate_session(
             &self,
             request: tonic::Request<super::SessionId>,
-        ) -> std::result::Result<tonic::Response<super::Void>, tonic::Status>;
-        async fn clear_purpose(
-            &self,
-            request: tonic::Request<super::PurposeToClear>,
         ) -> std::result::Result<tonic::Response<super::Void>, tonic::Status>;
     }
     #[derive(Debug)]
@@ -1241,53 +1217,6 @@ pub mod mpc_session_manager_server {
                     let fut = async move {
                         let inner = inner.0;
                         let method = TerminateSessionSvc(inner);
-                        let codec = tonic::codec::ProstCodec::default();
-                        let mut grpc = tonic::server::Grpc::new(codec)
-                            .apply_compression_config(
-                                accept_compression_encodings,
-                                send_compression_encodings,
-                            )
-                            .apply_max_message_size_config(
-                                max_decoding_message_size,
-                                max_encoding_message_size,
-                            );
-                        let res = grpc.unary(method, req).await;
-                        Ok(res)
-                    };
-                    Box::pin(fut)
-                }
-                "/svarog.MpcSessionManager/ClearPurpose" => {
-                    #[allow(non_camel_case_types)]
-                    struct ClearPurposeSvc<T: MpcSessionManager>(pub Arc<T>);
-                    impl<
-                        T: MpcSessionManager,
-                    > tonic::server::UnaryService<super::PurposeToClear>
-                    for ClearPurposeSvc<T> {
-                        type Response = super::Void;
-                        type Future = BoxFuture<
-                            tonic::Response<Self::Response>,
-                            tonic::Status,
-                        >;
-                        fn call(
-                            &mut self,
-                            request: tonic::Request<super::PurposeToClear>,
-                        ) -> Self::Future {
-                            let inner = Arc::clone(&self.0);
-                            let fut = async move {
-                                <T as MpcSessionManager>::clear_purpose(&inner, request)
-                                    .await
-                            };
-                            Box::pin(fut)
-                        }
-                    }
-                    let accept_compression_encodings = self.accept_compression_encodings;
-                    let send_compression_encodings = self.send_compression_encodings;
-                    let max_decoding_message_size = self.max_decoding_message_size;
-                    let max_encoding_message_size = self.max_encoding_message_size;
-                    let inner = self.inner.clone();
-                    let fut = async move {
-                        let inner = inner.0;
-                        let method = ClearPurposeSvc(inner);
                         let codec = tonic::codec::ProstCodec::default();
                         let mut grpc = tonic::server::Grpc::new(codec)
                             .apply_compression_config(
