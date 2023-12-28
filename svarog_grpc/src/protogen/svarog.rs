@@ -159,7 +159,7 @@ pub struct PurposeToClear {
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct SessionFruit {
-    #[prost(oneof = "session_fruit::Value", tags = "1, 2, 3")]
+    #[prost(oneof = "session_fruit::Value", tags = "1, 2")]
     pub value: ::core::option::Option<session_fruit::Value>,
 }
 /// Nested message and enum types in `SessionFruit`.
@@ -174,9 +174,6 @@ pub mod session_fruit {
         /// sign result
         #[prost(message, tag = "2")]
         Signatures(super::Signatures),
-        /// provider of keygen_menm or reshare
-        #[prost(bool, tag = "3")]
-        Provided(bool),
     }
 }
 #[derive(serde::Serialize, serde::Deserialize)]

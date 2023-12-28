@@ -25,7 +25,7 @@ pub struct MpcMember {
     pub reshare_members: HashSet<u16>,
 
     pub session_id: String,
-    pub expire_at: u64,
+    pub expire_at: i64,
     grpc_service_url: String,
 }
 
@@ -111,7 +111,7 @@ impl MpcMember {
         }
         self.member_name = member_name.to_string();
         self.session_id = ses_config.session_id.clone();
-        self.expire_at = ses_config.expire_before_finish as u64;
+        self.expire_at = ses_config.expire_before_finish;
         Ok(())
     }
 
@@ -286,7 +286,7 @@ pub trait DecompressAble<T> {
     fn decompress(&self) -> Outcome<T>;
 }
 
-impl<T> CompressAble for T
+impl<T> CompressAble for T 
 where
     T: Serialize + DeserializeOwned,
 {
@@ -310,9 +310,9 @@ where
     }
 }
 
-pub fn now() -> u64 {
+pub fn now() -> i64 {
     SystemTime::now()
         .duration_since(UNIX_EPOCH)
         .expect("Time went backwards")
-        .as_secs()
+        .as_secs() as i64
 }

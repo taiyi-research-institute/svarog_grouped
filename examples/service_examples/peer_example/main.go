@@ -22,13 +22,13 @@ func main() {
 
 	switch *args.ses_type {
 	case "keygen":
-		xpub, err := PeerKeygen(*args.peer_hostport, *args.ses_id, *args.member_name)
+		xpub, err := PeerKeygen(*args.peer_url, *args.ses_id, *args.member_name)
 		if err != nil {
 			panic(err)
 		}
 		fmt.Println(xpub)
 	case "sign":
-		sigs, err := PeerSign(*args.peer_hostport, *args.ses_id, *args.member_name, *args.key_id)
+		sigs, err := PeerSign(*args.peer_url, *args.ses_id, *args.member_name, *args.key_id)
 		if err != nil {
 			panic(err)
 		}
@@ -37,22 +37,28 @@ func main() {
 			panic(err)
 		}
 		fmt.Println(string(sigs_beautiful_bytes))
+	case "reshare":
+		xpub, err := PeerReshare(*args.peer_url, *args.ses_id, *args.member_name, *args.key_id)
+		if err != nil {
+			panic(err)
+		}
+		fmt.Println(xpub)
 	default:
 		panic("Invalid or unimplemented session type")
 	}
 }
 
 var args struct {
-	peer_hostport *string
-	ses_type      *string
-	ses_id        *string
-	member_name   *string
-	key_id        *string
+	peer_url    *string
+	ses_type    *string
+	ses_id      *string
+	member_name *string
+	key_id      *string
 }
 
 func ArgParse() error {
 	parser := argparse.NewParser("peer_example", "Examples of mpc peer (xuanwu)")
-	args.peer_hostport = parser.String(
+	args.peer_url = parser.String(
 		"s",
 		"peer_hostport",
 		&argparse.Options{
@@ -101,7 +107,7 @@ func ArgParse() error {
 	}
 
 	{ // validate args.ses_type
-		valid_ses_types := []string{"keygen", "sign"}
+		valid_ses_types := []string{"keygen", "sign", "reshare"}
 		found := false
 		for _, validvalid_ses_types := range valid_ses_types {
 			if validvalid_ses_types == *args.ses_type {
@@ -214,4 +220,46 @@ func PeerSign(
 	}
 
 	return sigs, nil
+}
+
+func PeerReshare(
+	sesman_hostport string,
+	ses_id string,
+	member_name string,
+	key_id string,
+) (xpub string, err error) {
+	conn, err := grpc.Dial(sesman_hostport, grpc.WithTransportCredentials(insecure.NewCredentials()))
+	defer conn.Close()
+	if err != nil {
+		return "", fmt.Errorf("Failed to connect to %s: %v\n", sesman_hostport, err)
+	}
+	peer := pb.NewMpcPeerClient(conn)
+	fmt.Println("Joining reshare session", ses_id, "as", member_name, "using key", key_id)
+
+	_, err = peer.JoinSession(context.Background(), &pb.JoinSessionRequest{
+		SessionId:  ses_id,
+		MemberName: member_name,
+		KeyName:    key_id,
+	})
+	if err != nil {
+		return "", fmt.Errorf("Failed to join session: %v\n", err)
+	}
+
+	for { // poll session fruit
+		ses_fruit, err := peer.GetSessionFruit(context.Background(), &pb.SessionId{
+			SessionId: ses_id,
+		})
+		if err != nil {
+			return "", fmt.Errorf("Failed to get session fruit: %v\n", err)
+		}
+		xpub = ses_fruit.GetRootXpub()
+		if xpub == "" {
+			fmt.Println("Waiting for reshare session fruit...")
+			time.Sleep(1 * time.Second)
+			continue
+		}
+		break
+	}
+
+	return xpub, nil
 }

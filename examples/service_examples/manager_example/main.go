@@ -23,6 +23,9 @@ func main() {
 	switch ses_type {
 	case "keygen":
 		conf, err = NewKeygenSession(sesman_hostport)
+		if err != nil {
+			panic(err)
+		}
 	case "sign":
 		derive_paths := []string{
 			"m/44/1/2/3/4",
@@ -30,11 +33,13 @@ func main() {
 		tx_hash := blake2b.Sum256([]byte(
 			"Je ne veux pas travailler. Je ne veux pas dejeuner. Je veux seulement l'oublier, et puis je fume.",
 		))
+		tx_hashes := append([][32]byte{}, tx_hash)
+		conf, err = NewSignSession(sesman_hostport, derive_paths, tx_hashes)
 		if err != nil {
 			panic(err)
 		}
-		tx_hashes := append([][32]byte{}, tx_hash)
-		conf, err = NewSignSession(sesman_hostport, derive_paths, tx_hashes)
+	case "reshare":
+		conf, err = NewReshareSession(sesman_hostport)
 		if err != nil {
 			panic(err)
 		}
@@ -63,10 +68,10 @@ func ArgParse() (string, string) {
 	ses_type := parser.Selector(
 		"t",
 		"type",
-		[]string{"keygen", "sign"},
+		[]string{"keygen", "sign", "reshare"},
 		&argparse.Options{
 			Required: true,
-			Help:     "Session type. Currently supported: keygen, sign",
+			Help:     "Session type. Currently supported: keygen, sign, reshare",
 		},
 	)
 	err := parser.Parse(os.Args)
@@ -90,6 +95,7 @@ func NewKeygenSession(
 	var client = pb.NewMpcSessionManagerClient(conn)
 
 	req := &pb.SessionConfig{
+		SessionId:   "a6b65314fb234a2da6b29e8036b59be6",
 		SessionType: "keygen",
 		KeyQuorum:   4, // minimum count of shards to sign
 		Groups: []*pb.Group{{
@@ -154,6 +160,7 @@ func NewSignSession(
 	var client = pb.NewMpcSessionManagerClient(conn)
 
 	req := &pb.SessionConfig{
+		SessionId:   "ba2e15797ffa4e62859155fc7fc50556",
 		SessionType: "sign",
 		KeyQuorum:   2, // minimum count of shards to sign
 		Groups: []*pb.Group{{
@@ -194,6 +201,81 @@ func NewSignSession(
 	resp, err = client.NewSession(context.Background(), req)
 	if err != nil {
 		return nil, fmt.Errorf("Failed to create sign session: %v\n", err)
+	}
+
+	return resp, nil
+}
+
+func NewReshareSession(
+	sesman_hostport string,
+) (resp *pb.SessionConfig, err error) {
+	conn, err := grpc.Dial(
+		sesman_hostport,
+		grpc.WithTransportCredentials(insecure.NewCredentials()),
+	)
+	defer conn.Close()
+	if err != nil {
+		return nil, fmt.Errorf("Failed to connect to %s: %v\n", sesman_hostport, err)
+	}
+	var client = pb.NewMpcSessionManagerClient(conn)
+
+	req := &pb.SessionConfig{
+		SessionId:        "c24f01d0af1f4cb4acb77fb1a8f1839b",
+		SessionType:      "reshare",
+		KeyQuorum:        4, // minimum count of providers
+		ReshareKeyQuorum: 3, // minimum count of reshare consumers during signing
+		Groups: []*pb.Group{{
+			GroupName:   "halogen",
+			GroupQuorum: 2, // minimum count of shards to sign
+			Members: []*pb.Member{{
+				MemberName:  "fluorine",
+				IsAttending: false,
+			}, {
+				MemberName:  "chlorine",
+				IsAttending: true,
+			}, {
+				MemberName:  "bromine",
+				IsAttending: true,
+			}},
+		}, { // BEGIN group "noble_gas"
+			GroupName:   "noble_gas",
+			GroupQuorum: 1, // minimum count of shards to sign
+			Members: []*pb.Member{{
+				MemberName:  "helium",
+				IsAttending: true,
+			}, {
+				MemberName:  "neon",
+				IsAttending: true,
+			}, {
+				MemberName:  "argon",
+				IsAttending: false,
+			}},
+		}, {
+			GroupName:   "alkali_metal",
+			IsReshare:   true,
+			GroupQuorum: 3,
+			Members: []*pb.Member{{
+				MemberName:  "lithium",
+				IsAttending: true,
+			}, {
+				MemberName:  "sodium",
+				IsAttending: true,
+			}, {
+				MemberName:  "potassium",
+				IsAttending: true,
+			}, {
+				MemberName:  "rubidium",
+				IsAttending: true,
+			}, {
+				MemberName:  "cesium",
+				IsAttending: true,
+			}},
+		}},
+	}
+
+	resp, err = client.NewSession(context.Background(), req)
+	if err != nil {
+		return nil, fmt.Errorf("Failed to create reshare session: %v\n", err)
 	}
 
 	return resp, nil

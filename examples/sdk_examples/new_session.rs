@@ -8,6 +8,9 @@ use svarog_mpc_sdk::{
     throw,
 };
 
+// 和 <proj>/examples/service_examples/manager_example/main.go 的区别是
+// 此处将 session_id 硬编码为 "keygen", "sign", "reshare", "sign_after_reshare"
+// 彼处获得 sesman 分配的 session_id
 #[tokio::main]
 async fn main() -> Outcome<()> {
     let matches = Command::new("svarog_mpc_example")

@@ -5,7 +5,7 @@ edition = "2021"
 
 [[bin]]
 name = "svarog_peer"
-path = "src/peer_main.rs"
+path = "src/svarog_peer.rs"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
@@ -18,6 +18,9 @@ sqlx = { version = "0.7", features = ["sqlite", "runtime-tokio-native-tls"] }
 tonic = { version = "0.10", features = ["gzip", "channel"] }
 tokio = { version = "1", features = ["full"] }
 toml = "0.8"
+tracing = "*"
+tracing-subscriber = "*"
+tracing-appender = "*"
 serde = { version = "*", features = ["derive"] }
 
 [dependencies.svarog_grpc]
@@ -25,10 +28,6 @@ path = "../svarog_grpc"
 
 [dependencies.svarog_mpc_sdk]
 path = "../svarog_mpc_sdk"
-
-[dependencies.xuanmi_base_support]
-git = "ssh://git@github.com/taiyi-research-institute/xuanmi_base_support"
-branch = "main"
 
 [profile.release]
 opt-level = 3

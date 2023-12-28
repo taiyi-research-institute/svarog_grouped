@@ -18,7 +18,6 @@ func (srv *SessionManager) NewSession(
 	req *pb.SessionConfig,
 ) (resp *pb.SessionConfig, err error) {
 	db := srv.db
-	resp = req
 
 	{ // Validate the request
 		assert_sestype := req.SessionType == "keygen" ||
@@ -111,7 +110,7 @@ func (srv *SessionManager) NewSession(
 				}
 			}
 		} else {
-			{ // Analogous to sign
+			{ // Validate like sign
 				_cdd := make(map[string]bool)
 				_groups := make(map[string]bool)
 				_gq := make(map[string]uint64)
@@ -119,11 +118,7 @@ func (srv *SessionManager) NewSession(
 				_katt := uint64(0)
 				_kq := req.KeyQuorum
 				for _, group := range req.Groups {
-					if group.IsReshare {
-						continue
-					}
 					if _groups[group.GroupName] { // Every group is unique.
-
 						return nil, errors.New("Every non-reshare group should be unique")
 					}
 					_groups[group.GroupName] = true
@@ -155,7 +150,7 @@ func (srv *SessionManager) NewSession(
 				}
 			}
 
-			{ // Analogous to keygen
+			{ // Validate like keygen
 				_members := make(map[string]bool)
 				_groups := make(map[string]bool)
 				_kq := req.ReshareKeyQuorum
@@ -308,6 +303,7 @@ func (srv *SessionManager) NewSession(
 		}
 	}
 
+	resp = req
 	return resp, nil
 }
 
