@@ -20,5 +20,3 @@
 
 pub mod feldman_vss;
 pub mod multi_party_ecdsa;
-pub mod mta;
-pub mod range_proof;

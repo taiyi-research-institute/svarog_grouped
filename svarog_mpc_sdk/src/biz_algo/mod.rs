@@ -1,4 +1,3 @@
-#![allow(non_snake_case)]
 mod keygen;
 pub use keygen::*;
 mod keystore;

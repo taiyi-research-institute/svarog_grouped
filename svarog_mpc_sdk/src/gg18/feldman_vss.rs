@@ -1,10 +1,7 @@
-#![allow(non_snake_case)]
-
 use std::collections::{HashMap, HashSet};
 
-use serde::{Deserialize, Serialize};
-
 use crate::{assert_throw, exception::*};
+use serde::{Deserialize, Serialize};
 use curv::cryptographic_primitives::secret_sharing::Polynomial;
 use curv::elliptic::curves::{Curve, Point, Scalar};
 

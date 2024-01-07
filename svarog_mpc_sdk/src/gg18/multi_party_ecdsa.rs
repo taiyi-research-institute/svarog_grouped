@@ -1,5 +1,3 @@
-#![allow(non_snake_case)]
-
 /*
     Multi-party ECDSA
 
@@ -391,9 +389,7 @@ impl SignKeys {
         delta_kv: &HashMap<u16, Scalar<Secp256k1>>,
     ) -> Outcome<Scalar<Secp256k1>> {
         let mut res: Scalar<Secp256k1> = delta_kv.values().sum();
-        res = res
-            .invert()
-            .ifnone("AlgorithmException", "Sum of deltas is 0")?;
+        res = res.invert().ifnone("", "Sum of deltas is 0")?;
         Ok(res)
     }
 
